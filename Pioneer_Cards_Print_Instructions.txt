@@ -1,0 +1,49 @@
+MAGICAL PIONEER CARDS - PRINT INSTRUCTIONS
+File: Pioneer_Cards_Print_Ready.pdf (2 pages, A4 portrait 210 x 297 mm)
+
+CONFIDENTIAL: the PDF contains every cardholder's card number and CVV.
+Do not email it, upload it or commit it to git. Delete it (and any print-shop copies) when printing is done.
+
+WHAT IS ON THE SHEET
+  Page 1 = 8 fronts, page 2 = 8 backs, 2 columns x 4 rows.
+  Card (trim) size: 90 x 56.7 mm. Artwork has 2 mm bleed on every side.
+  Gap between cards: 8 mm. Sheet margins: 11 mm left/right, 23.1 mm top/bottom.
+  Crop marks (thin black lines) sit outside the bleed and mark every cut line.
+  Two registration targets (circle + cross) on the vertical centre line, top and bottom.
+
+  Page 1 (front)                     Page 2 (back, as printed)
+  row 1:  Samvel     | Vardan        row 1:  Vardan     | Samvel
+  row 2:  Arevik     | Lusine        row 2:  Lusine     | Arevik
+  row 3:  Hermine    | Valya         row 3:  Valya      | Hermine
+  row 4:  Hrant      | Lina          row 4:  Lina       | Hrant
+  The backs are swapped left/right on purpose: after a long-edge flip, each back lands
+  exactly behind its own front. Every back also shows its card number, so you can check the pairing.
+
+PRINTER SETTINGS
+  Paper:        A4, heavy card stock (300-350 g/m2 recommended), matte or silk.
+  Scale:        100% / Actual size. NEVER "Fit to page" or "Shrink oversized pages".
+  Duplex:       2-sided, FLIP ON LONG EDGE (sometimes called "Long-edge binding" / "Book").
+  Orientation:  Portrait. Disable "auto-rotate and center" if the driver offers it.
+  Colour:       Colour, highest quality. The file is RGB; a print shop's RIP converts it to CMYK.
+  For a print shop: "A4 duplex, long-edge flip, 100%, cut to 90 x 56.7 mm on the crop marks".
+
+ALIGNMENT TEST (do this first, on plain paper)
+  1. Print both pages double-sided on ordinary paper with the settings above.
+  2. Hold the sheet against a window or bright light, page 1 facing you.
+  3. The two registration targets on page 2 must sit on top of the targets on page 1,
+     and the crop marks of both sides must overlap.
+  4. The header line of page 2 must be at the TOP of the sheet, the same edge as page 1's header.
+     If it is at the bottom (upside down), the printer flipped on the short edge:
+     switch to "flip on long edge" and print again.
+  5. If the targets are offset by a constant amount (printer duplex drift), note the offset
+     in mm; up to about 1.5 mm is absorbed by the 2 mm bleed. For a bigger offset, use the
+     printer's duplex / back-side image shift setting, or print the two pages as separate
+     passes and turn the sheet over around its long (vertical) edge before feeding it again.
+
+CUTTING
+  Cut with a guillotine or a ruler and sharp blade, along the crop marks (each line is cut
+  twice in the 8 mm gaps, once for each neighbouring card). Optional: round the corners with
+  a 3 mm corner rounder.
+
+CHECK BEFORE HANDING OUT
+  Compare each finished card: the number on the back (CARD NO.) must equal the number on the front.

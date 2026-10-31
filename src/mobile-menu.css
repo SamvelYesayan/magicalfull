@@ -1,0 +1,152 @@
+/* ==========================================================
+   MAGICAL mobile navigation — "M" portal button + full-screen layer
+   Only active at <=960px (same breakpoint where the desktop nav hides).
+   Desktop is untouched: .mb and .mm are display:none above 960px.
+   ========================================================== */
+:root{--blu:#38bdf8}
+/* The button's two radial gradients used to swap instantly on click (gradients don't interpolate = a visible snap on frame 1).
+   Same gradients, but their positions/colours are registered properties so the existing .5s background timing morphs them. */
+@property --b1x{syntax:'<percentage>';inherits:false;initial-value:28%}
+@property --b1y{syntax:'<percentage>';inherits:false;initial-value:18%}
+@property --b1c{syntax:'<color>';inherits:false;initial-value:rgba(139,92,246,.42)}
+@property --b2x{syntax:'<percentage>';inherits:false;initial-value:90%}
+@property --b2y{syntax:'<percentage>';inherits:false;initial-value:100%}
+@property --b2c{syntax:'<color>';inherits:false;initial-value:rgba(56,189,248,.22)}
+.mb,.mm{display:none}
+
+@media(max-width:960px){
+  /* ---------- the button ---------- */
+  .mb{position:relative;display:grid;place-items:center;flex:none;width:44px;height:44px;padding:0;border:0;border-radius:13px;color:#fff;cursor:pointer;isolation:isolate;-webkit-tap-highlight-color:transparent;
+    --b1x:28%;--b1y:18%;--b1c:rgba(139,92,246,.42);--b2x:90%;--b2y:100%;--b2c:rgba(56,189,248,.22);
+    background:radial-gradient(circle at var(--b1x) var(--b1y),var(--b1c),transparent 62%),radial-gradient(circle at var(--b2x) var(--b2y),var(--b2c),transparent 60%),#0e0e13;
+    outline:2px solid transparent;outline-offset:3px;
+    animation:mm-idle 4.5s ease-in-out infinite;transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .5s,background .5s,outline-color .35s,--b1x .5s,--b1y .5s,--b1c .5s,--b2x .5s,--b2y .5s,--b2c .5s}
+  /* keyboard focus ring: same ring as the global :focus-visible, but faded in instead of popping on the click frame */
+  .mb:focus-visible{outline-color:var(--pri2)}
+  .mb::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+    background:conic-gradient(from var(--a),rgba(139,92,246,.15) 0 55%,var(--pri2) 72%,var(--blu) 86%,rgba(139,92,246,.15));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spin 5s linear infinite}
+  .mb::after{content:"";position:absolute;inset:-7px;border-radius:20px;z-index:-1;background:radial-gradient(circle,rgba(139,92,246,.55),rgba(56,189,248,.18) 60%,transparent 72%);filter:blur(6px);opacity:0;transition:opacity .5s}
+  .mb:active{transform:scale(.9)}
+  .mb:active::after,.mb.open::after{opacity:1}
+  .mb.open{box-shadow:0 0 0 1px rgba(56,189,248,.28) inset;--b1x:70%;--b1y:20%;--b1c:rgba(56,189,248,.34);--b2x:20%;--b2y:100%;--b2c:rgba(139,92,246,.4)}
+  @keyframes mm-idle{50%{box-shadow:0 0 18px -6px rgba(139,92,246,.7)}}
+
+  .mb-g{width:26px;height:26px;overflow:visible}
+  .mb-g path{fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 2;
+    transition:stroke-dashoffset .5s cubic-bezier(.7,0,.2,1),opacity .18s linear}
+  /* M is drawn, X is drawn: the two states cross-draw into each other */
+  .mb-g .m1,.mb-g .m2{stroke-dashoffset:0;transition-delay:.2s,.2s}
+  .mb-g .x1,.mb-g .x2{stroke-dashoffset:1.15;opacity:0;transition-delay:0s,.3s}
+  .mb-g .x2{transition-delay:.06s,.36s}
+  .mb.open .m1,.mb.open .m2{stroke-dashoffset:1.15;opacity:0;transition-delay:0s,.3s}
+  .mb.open .m2{transition-delay:.05s,.35s}
+  .mb.open .x1,.mb.open .x2{stroke-dashoffset:0;opacity:1;transition-delay:.18s,.18s}
+  .mb.open .x2{transition-delay:.26s,.26s}
+  .mb-g .sp{fill:var(--pri2);stroke:none;transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 0 3px var(--pri));
+    transition:transform .7s cubic-bezier(.2,.8,.2,1),fill .5s;animation:mm-tw 3.2s ease-in-out infinite}
+  .mb.open .sp{transform:rotate(180deg) scale(1.35);fill:var(--blu)}
+  @keyframes mm-tw{50%{opacity:.45}}
+
+  /* header while the layer is open: stays on top, becomes transparent */
+  header{transition:box-shadow .4s,background-color .5s,border-color .5s,-webkit-backdrop-filter .5s,backdrop-filter .5s}
+  header.mo{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;border-bottom-color:transparent;box-shadow:none}
+  header .hr .btn:not(#lg){transition:opacity .3s,transform .2s,box-shadow .2s,background .2s,translate .25s}
+  header.mo .hr .btn:not(#lg){opacity:0;pointer-events:none}
+
+  html.mm-lock{overflow:hidden;scrollbar-gutter:stable}
+
+  /* ---------- the layer ---------- */
+  /* Samsung fix: the layer used to be rgba(4,4,7,.965) + backdrop-filter:blur(18px). A full-screen backdrop blur under an animating
+     clip-path made real Galaxy S23/S26 jitter. Base is now fully opaque (same colour), so the blur has nothing left to show. */
+  .mm{--hh:80px;--ox:calc(100% - 46px);--oy:40px;position:fixed;inset:0;z-index:19;display:block;overflow:hidden;visibility:hidden;pointer-events:none;
+    background:radial-gradient(120% 65% at 100% 0%,rgba(79,70,229,.26),transparent 62%),radial-gradient(100% 60% at 0% 100%,rgba(139,92,246,.24),transparent 60%),rgb(4,4,7);
+    clip-path:circle(0px at var(--ox) var(--oy));will-change:clip-path;
+    transition:clip-path .75s cubic-bezier(.7,0,.2,1) .28s,visibility 0s linear 1.03s}
+  .mm.warm{visibility:visible;transition:clip-path .75s cubic-bezier(.7,0,.2,1) .28s,visibility 0s}
+  .mm.open{visibility:visible;pointer-events:auto;clip-path:circle(140vmax at var(--ox) var(--oy));transition:clip-path .95s cubic-bezier(.65,0,.15,1),visibility 0s}
+  .mm.idle *{animation-play-state:paused!important}
+
+  .mm-bg{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .mm-grid{position:absolute;inset:-44px 0 0;background-image:linear-gradient(rgba(139,92,246,.10) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,.10) 1px,transparent 1px);background-size:44px 44px;
+    -webkit-mask:radial-gradient(ellipse 90% 70% at 75% 15%,#000,transparent 75%);mask:radial-gradient(ellipse 90% 70% at 75% 15%,#000,transparent 75%);animation:mm-grid 14s linear infinite}
+  @keyframes mm-grid{to{transform:translateY(44px)}}
+  .mm-glow{position:absolute;border-radius:50%;filter:blur(46px);will-change:transform}
+  .mm-glow.g1{width:min(340px,80vw);height:min(340px,80vw);right:-24%;top:-8%;background:rgba(99,102,241,.32);animation:mm-float 9s ease-in-out infinite}
+  .mm-glow.g2{width:min(320px,76vw);height:min(320px,76vw);left:-26%;bottom:-6%;background:rgba(139,92,246,.30);animation:mm-float 11s ease-in-out -4s infinite reverse}
+  @keyframes mm-float{50%{transform:translate(-18px,22px) scale(1.12)}}
+  .mm-wm{position:absolute;right:-16%;bottom:16%;width:86%;height:auto;opacity:.05;filter:drop-shadow(0 0 30px rgba(139,92,246,.8));-webkit-mask:linear-gradient(#000,transparent 90%);mask:linear-gradient(#000,transparent 90%)}
+  .mm-scan{position:absolute;left:0;right:0;top:0;height:1px;background:linear-gradient(90deg,transparent,var(--blu),var(--pri2),transparent);box-shadow:0 0 18px var(--blu);opacity:0;animation:mm-scan 7s ease-in-out infinite}
+  @keyframes mm-scan{0%{transform:translateY(0);opacity:0}8%,88%{opacity:.5}100%{transform:translateY(100vh);opacity:0}}
+  .mm-dots i{position:absolute;left:var(--x);bottom:-10px;width:var(--s);height:var(--s);border-radius:50%;background:var(--pc);box-shadow:0 0 8px var(--pc);opacity:0;animation:mm-rise var(--t) linear var(--d) infinite}
+  @keyframes mm-rise{0%{transform:translate(0,0);opacity:0}15%{opacity:.75}85%{opacity:.45}100%{transform:translate(16px,-108vh);opacity:0}}
+  /* small HUD corner marks */
+  .mm-br{position:absolute;width:18px;height:18px;border:1px solid rgba(167,139,250,.45);opacity:0;transition:opacity .8s .7s}
+  .mm.open .mm-br{opacity:1}
+  .mm-br.tl{left:14px;top:calc(var(--hh) + 6px + env(safe-area-inset-top,0px));border-right:0;border-bottom:0}
+  .mm-br.br{right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));border-left:0;border-top:0}
+
+  .mm-body{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;
+    padding:calc(var(--hh) + env(safe-area-inset-top,0px) + 20px) 22px calc(26px + env(safe-area-inset-bottom,0px))}
+  .mm-nav{position:relative;width:100%;max-width:520px;margin:0 auto}
+  /* circuit rail connecting the icons */
+  .mm-nav::before{content:"";position:absolute;left:20px;top:30px;bottom:30px;width:1px;background:linear-gradient(transparent,rgba(139,92,246,.55) 25%,rgba(56,189,248,.5) 75%,transparent);transform-origin:top;transform:scaleY(0);transition:transform 1s cubic-bezier(.2,.8,.2,1)}
+  .mm.open .mm-nav::before{transform:scaleY(1);transition-delay:.45s}
+  .mm-nav::after{content:"";position:absolute;left:19px;top:30px;width:3px;height:46px;border-radius:3px;background:linear-gradient(transparent,var(--blu),transparent);box-shadow:0 0 12px var(--blu);opacity:0;animation:mm-pulse 4.6s ease-in-out 1.4s infinite}
+  @keyframes mm-pulse{0%{transform:translateY(0);opacity:0}15%,85%{opacity:.9}100%{transform:translateY(calc(var(--rail,300px) - 46px));opacity:0}}
+
+  .mm-i{--x:50%;--y:50%;position:relative;display:flex;align-items:center;gap:16px;padding:14px 0;isolation:isolate;text-decoration:none;color:#d4d4d8;-webkit-tap-highlight-color:transparent;
+    opacity:0;transform:translateX(-24px);filter:blur(6px);
+    transition:opacity .35s calc((4 - var(--i))*30ms),transform .5s cubic-bezier(.4,0,.2,1) calc((4 - var(--i))*30ms),filter .35s calc((4 - var(--i))*30ms)}
+  .mm.open .mm-i{opacity:1;transform:none;filter:none;
+    transition:opacity .6s calc(var(--i)*85ms + .42s),transform .8s cubic-bezier(.2,.8,.2,1) calc(var(--i)*85ms + .42s),filter .6s calc(var(--i)*85ms + .42s)}
+  .mm-i::before{content:"";position:absolute;inset:2px -12px;z-index:-1;border-radius:16px;background:radial-gradient(260px circle at var(--x) var(--y),rgba(139,92,246,.26),rgba(56,189,248,.06) 55%,transparent 75%);opacity:0;transition:opacity .35s}
+  .mm-i::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,rgba(255,255,255,.16),rgba(255,255,255,.02));transform:scaleX(0);transform-origin:left;transition:transform .3s}
+  .mm.open .mm-i::after{transform:none;transition:transform 1s cubic-bezier(.2,.8,.2,1) calc(var(--i)*85ms + .6s)}
+  .mm-l{position:absolute;left:0;right:0;bottom:-1px;height:2px;background:linear-gradient(90deg,var(--pri),var(--blu) 60%,transparent);box-shadow:0 0 14px var(--pri);transform:scaleX(0);transform-origin:left;transition:transform .55s cubic-bezier(.2,.8,.2,1)}
+
+  .mm-ic{position:relative;flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;color:var(--pri2);background:#09090d;border:1px solid rgba(139,92,246,.3);
+    transition:transform .5s cubic-bezier(.2,.8,.2,1),box-shadow .4s,border-color .4s,color .4s}
+  .mm-ic svg{width:19px;height:19px}
+  .mm-ic::after{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;pointer-events:none;background:conic-gradient(from var(--a),transparent 0 62%,var(--blu),var(--pri2),transparent);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;animation:spin 2.6s linear infinite;transition:opacity .35s}
+  .mm-t{flex:1 1 auto;min-width:0;font:600 clamp(24px,7.2vw,34px)/1.15 Outfit,'Noto Sans Armenian',sans-serif;letter-spacing:-.01em;overflow-wrap:anywhere;color:#e4e4e7;
+    transition:transform .5s cubic-bezier(.2,.8,.2,1),color .3s,text-shadow .4s}
+  html[lang=hy] .mm-t{letter-spacing:0;font-size:clamp(18px,5.4vw,30px)}
+  .mm-r{position:relative;flex:none;width:26px;height:20px}
+  .mm-n{position:absolute;right:0;top:50%;transform:translateY(-50%);font:500 12px ui-monospace,Menlo,monospace;font-style:normal;letter-spacing:.08em;color:#71717a;transition:opacity .25s,transform .4s,color .3s}
+  .mm-ar{position:absolute;right:0;top:50%;width:20px;height:20px;margin-top:-10px;color:var(--blu);opacity:0;transform:translateX(-12px);transition:opacity .3s,transform .5s cubic-bezier(.2,.8,.2,1)}
+
+  /* current section (scroll-spy) — quiet */
+  .mm-i.cur .mm-ic{border-color:rgba(167,139,250,.65);box-shadow:0 0 16px -6px var(--pri)}
+  .mm-i.cur .mm-n{color:var(--pri2)}
+  .mm-i.cur .mm-t{color:#fff}
+  /* hot = pressed / keyboard focus / mouse hover — full effect */
+  .mm-i:is(:active,:focus-visible,.hot){outline:0;color:#fff}
+  .mm-i:is(:active,:focus-visible,.hot)::before{opacity:1}
+  .mm-i:is(:active,:focus-visible,.hot) .mm-l{transform:scaleX(1)}
+  .mm-i:is(:active,:focus-visible,.hot) .mm-t{transform:translateX(8px);color:#fff;text-shadow:0 0 24px rgba(139,92,246,.9),0 0 2px rgba(255,255,255,.4)}
+  .mm-i:is(:active,:focus-visible,.hot) .mm-ic{transform:scale(1.08) rotate(-5deg);color:#fff;border-color:rgba(56,189,248,.7);box-shadow:0 0 26px -3px var(--pri),0 0 12px -4px var(--blu)}
+  .mm-i:is(:active,:focus-visible,.hot) .mm-ic::after{opacity:1}
+  .mm-i:is(:active,:focus-visible,.hot) .mm-n{opacity:0;transform:translate(8px,-50%)}
+  .mm-i:is(:active,:focus-visible,.hot) .mm-ar{opacity:1;transform:none}
+
+  .mm-foot{margin:auto auto 0;width:100%;max-width:520px;padding-top:26px;opacity:0;transform:translateY(16px);filter:blur(5px);
+    transition:opacity .3s,transform .4s,filter .3s}
+  .mm.open .mm-foot{opacity:1;transform:none;filter:none;transition:opacity .7s .85s,transform .9s cubic-bezier(.2,.8,.2,1) .85s,filter .7s .85s}
+  .mm-foot .btn{width:100%;padding:15px 22px;font-size:16px;border-radius:12px}
+  .mm-tag{display:flex;justify-content:center;gap:12px;margin-top:20px;font:600 11px/1 Inter,sans-serif;letter-spacing:.28em}
+  .mm-tag span:nth-child(1){color:#fff}.mm-tag span:nth-child(2){color:var(--pri2)}.mm-tag span:nth-child(3){color:var(--blu)}
+}
+@media(max-width:640px){.mm{--hh:68px}}
+/* very narrow phones: the header CTA gives its room to the menu button (it's the big button inside the menu, and in the hero) */
+@media(max-width:350px){header .hr .btn:not(#lg){display:none}}
+@media(max-width:960px) and (max-height:640px){.mm-i{padding:9px 0}.mm-foot{padding-top:16px}.mm-tag{margin-top:14px}}
+
+@media(prefers-reduced-motion:reduce){
+  .mb,.mb *,.mb::before,.mm *,.mm *::before,.mm *::after{animation:none!important}
+  .mm,.mm *,.mm *::before,.mm *::after,.mb *{transition-delay:0s!important}
+  .mm-i,.mm-foot{opacity:0}.mm.open .mm-i,.mm.open .mm-foot{opacity:1}
+}
+/* Pioneer Card row: a page link (not a section); faint accent so it reads as a separate destination */
+@media(max-width:960px){.mm-pc .mm-t{color:#ddd6fe}.mm-pc .mm-ic{background:linear-gradient(160deg,rgba(139,92,246,.22),#09090d 70%)}}

@@ -1,0 +1,45 @@
+body.adm{min-height:100vh;background:var(--bg)}
+.adm .a-wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+.adm .login{min-height:100vh;display:grid;place-items:center;padding:20px}
+.adm .login form{width:min(400px,100%);opacity:1;transform:none;filter:none}
+.adm .login .logo{justify-content:center;margin-bottom:22px}
+.adm .login h1{font-size:24px;text-align:center;margin:0 0 6px}
+.adm .login .sub{color:var(--mut);text-align:center;margin:0 0 8px;font-size:14px}
+.adm .bar{position:sticky;top:0;z-index:20;background:rgba(9,9,11,.92);border-bottom:1px solid var(--line)}
+.adm .bar .a-wrap{display:flex;align-items:center;gap:14px;height:64px}
+.adm .bar .sp{flex:1}.adm .bar .who{color:var(--mut);font-size:13px}
+.adm .btn.sm{padding:8px 14px;font-size:13.5px}
+.adm .tabs{display:flex;gap:8px;margin:24px 0 18px;flex-wrap:wrap}
+.adm .tab{padding:10px 18px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--mut);font:600 14px Outfit,'Noto Sans Armenian',sans-serif;cursor:pointer}
+.adm .tab[aria-selected="true"]{color:#fff;border-color:var(--pri);background:rgba(139,92,246,.18)}
+.adm .tab b{margin-left:8px;background:var(--pri);color:#fff;border-radius:99px;padding:1px 8px;font-size:12px}
+.adm .tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.adm .tools input,.adm .tools select{width:auto;flex:1 1 220px;max-width:340px}
+.adm .tools select{flex:0 1 180px}
+.adm .count{color:var(--mut);font-size:14px;margin-left:auto}
+.adm .tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.adm table{width:100%;border-collapse:collapse;font-size:14px;min-width:760px}
+.adm th,.adm td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.adm tr:last-child td{border-bottom:0}
+.adm th{font:600 12px 'Noto Sans Armenian',Inter,sans-serif;letter-spacing:.06em;color:var(--mut);background:#131316}
+.adm th button{all:unset;cursor:pointer;display:inline-flex;gap:4px;align-items:center}.adm th button:hover{color:var(--txt)}.adm th button:focus-visible{outline:2px solid var(--pri2)}
+.adm td .mono{font-family:Outfit,monospace;letter-spacing:.04em}
+.adm td.act{text-align:right}.adm td.act>*{margin-left:8px}
+.adm tr.unread td{font-weight:600}
+.adm tr.clk{cursor:pointer}.adm tr.clk:hover td{background:#1c1c20}
+.adm .st{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
+.adm .st.new{color:#7dd3fc;border-color:rgba(56,189,248,.5)}.adm .st.processed{color:#86efac;border-color:rgba(74,222,128,.5)}.adm .st.read{color:var(--mut)}
+.adm .empty{padding:40px;text-align:center;color:var(--mut)}
+.adm .pager{display:flex;gap:10px;align-items:center;justify-content:center;margin:18px 0 60px;color:var(--mut);font-size:14px}
+.adm .pager .btn[disabled]{opacity:.4;cursor:default}
+.adm .modal{position:fixed;inset:0;z-index:50;background:rgba(4,4,7,.8);display:grid;place-items:center;padding:16px;overflow-y:auto}
+.adm .mcard{position:relative;width:min(760px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;background:#0e0e11;border:1px solid var(--line);border-radius:16px;padding:28px}
+.adm .mcard.sm{width:min(440px,100%)}
+.adm .mcard h2{font-size:20px;margin:0 36px 16px 0}
+.adm .mx{position:absolute;top:12px;right:12px;width:36px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--mut);cursor:pointer;font-size:20px;line-height:1}
+.adm .kv{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 14px;margin:0 0 18px;font-size:14px}.adm .kv dt{color:var(--mut)}.adm .kv dd{margin:0;overflow-wrap:anywhere}
+.adm .body{white-space:pre-wrap;overflow-wrap:anywhere;background:#131316;border:1px solid var(--line);border-radius:10px;padding:14px;font-size:14.5px;margin-bottom:18px}
+.adm .macts{display:flex;gap:10px;flex-wrap:wrap}
+.adm .msg{margin:10px 0 0;font-size:13.5px;color:#86efac}.adm .msg.err{color:#fca5a5}
+.adm .err{display:none;color:#fca5a5;font-size:13px;margin-top:6px}.adm .err.on{display:block}
+@media(max-width:640px){.adm .a-wrap{padding:0 14px}.adm .bar .who{display:none}.adm .count{margin-left:0;width:100%}.adm .kv{grid-template-columns:1fr}.adm .mcard{padding:22px 16px}.adm .tools input,.adm .tools select{max-width:none;flex:1 1 100%}}

@@ -1,0 +1,11 @@
+/* Fonts previously imported from main.js (same files, same order). Linked from index.html so they are render-blocking CSS, not JS-injected. */
+@import '@fontsource/outfit/500.css';
+@import '@fontsource/outfit/600.css';
+@import '@fontsource/outfit/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/noto-sans-armenian/400.css';
+@import '@fontsource/noto-sans-armenian/500.css';
+@import '@fontsource/noto-sans-armenian/600.css';
+@import '@fontsource/noto-sans-armenian/700.css';
