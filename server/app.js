@@ -1,26 +1,19 @@
 import http from 'node:http';
-import { EVENT } from '../shared/event.js';
-import { validateRegistration, validateContact } from '../shared/validation.js';
-import { createPool, migrate, withTransaction, isUnique, escapeLike } from './db.js';
-import { HttpError, Router, sendJson, sendBuffer, readJson } from './http.js';
-import { RateLimiter, sha256, hmacToken, randomToken, safeEqual, hashPassword, verifyPassword, DUMMY_HASH, clientIp, parseCookies, setSecurityHeaders } from './security.js';
-import { renderInvitationPdf, streamInvitationsPdf } from './pdf/ticket.js';
-import { streamSink } from './pdf/writer.js';
+import { validateContact } from '../shared/validation.js';
+import { createPool, migrate, withTransaction, escapeLike } from './db.js';
+import { HttpError, Router, sendJson, readJson } from './http.js';
+import { RateLimiter, sha256, randomToken, safeEqual, hashPassword, verifyPassword, DUMMY_HASH, clientIp, parseCookies, setSecurityHeaders } from './security.js';
 import { serveStatic } from './static.js';
 import { registerPioneer } from './pioneer.js';
 import { existsSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
 
 const COOKIE = 'mg_admin';
-const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
-const newInvitationNo = () => 'MGC-' + [...randomBytes(6)].map((b) => ALPHA[b % 32]).join('');
 
 const M = {
   server: 'Սերվերի սխալ։ Խնդրում ենք փորձել կրկին։',
   notFound: 'Չի գտնվել։',
   rate: 'Չափազանց շատ հարցումներ։ Խնդրում ենք փորձել մի փոքր ուշ։',
   validation: 'Խնդրում ենք ուղղել նշված դաշտերը։',
-  dup: 'Այս տվյալներով հրավիրատոմս արդեն գրանցված է։ Եթե կորցրել եք այն, դիմեք կազմակերպիչներին։',
   login: 'Սխալ օգտանուն կամ գաղտնաբառ։',
   auth: 'Անհրաժեշտ է մուտք գործել։',
   csrf: 'Անվավեր անվտանգության նշան։ Թարմացրեք էջը և փորձեք կրկին։',
@@ -28,21 +21,14 @@ const M = {
   spam: 'Հարցումը մերժվեց։ Խնդրում ենք փորձել կրկին։',
 };
 const NO_STORE = { 'Cache-Control': 'private, no-store' };
-const publicEvent = { name: EVENT.name, dateText: EVENT.dateText, time: EVENT.time, location: EVENT.location, giftsNote: EVENT.giftsNote };
 
-const regPublic = (r) => ({ number: r.invitation_no, firstName: r.first_name, lastName: r.last_name, createdAt: r.created_at, event: publicEvent });
-const regAdmin = (r) => ({ id: r.id, invitationNo: r.invitation_no, firstName: r.first_name, lastName: r.last_name, age: r.age, phone: r.phone, status: r.status, createdAt: r.created_at, event: publicEvent });
 const msgOut = (r) => ({ id: r.id, name: r.name, email: r.email, phone: r.phone, service: r.service, message: r.message, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at });
-const pdfData = (r) => ({ firstName: r.first_name, lastName: r.last_name, invitationNo: r.invitation_no });
 const intParam = (v, d, min, max) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d; };
 
 export async function createApp(config) {
   const db = createPool(config);
-  let eventId;
   try {
     if (config.autoMigrate !== false) await migrate(db);
-    await db.query('INSERT INTO events (slug, title) VALUES ($1, $2) ON CONFLICT (slug) DO NOTHING', [EVENT.slug, EVENT.name]);
-    eventId = (await db.query('SELECT id FROM events WHERE slug = $1', [EVENT.slug])).rows[0].id;
   } catch (e) { await db.end().catch(() => {}); throw e; } // never leave a half-initialised pool behind
   const limiter = new RateLimiter();
   const router = new Router();
@@ -87,59 +73,6 @@ export async function createApp(config) {
 
   // ---------- public API -------------------------------------------------------
   R('GET', '/api/health', {}, (ctx) => sendJson(ctx.res, 200, { ok: true }));
-  R('GET', '/api/event', {}, (ctx) => sendJson(ctx.res, 200, { event: publicEvent }));
-
-  R('POST', '/api/registrations', {}, async (ctx) => {
-    guard(ctx, 'reg-burst', 8, 10 * 60_000);
-    guard(ctx, 'reg-hour', 40, 60 * 60_000);
-    const body = await readJson(ctx.req);
-    const v = validateRegistration(body);
-    if (!v.ok) throw new HttpError(422, 'validation_failed', M.validation, v.errors);
-    const { firstName, lastName, age, phone } = v.values;
-    const key = String(ctx.req.headers['idempotency-key'] || '');
-    if (key && !/^[A-Za-z0-9_-]{8,100}$/.test(key)) throw new HttpError(400, 'bad_idempotency_key', 'Անվավեր հարցում։');
-    // With a key the token is derived (HMAC), so a retry of the same submission returns the same invitation.
-    const token = key ? hmacToken(config.appSecret, 'invite-token', key) : randomToken(32);
-    const tokenHash = sha256(token);
-    const existing = (await db.query('SELECT * FROM registrations WHERE access_token_hash = $1', [tokenHash])).rows[0];
-    const reply = (row, status) => sendJson(ctx.res, status, { invitation: { ...regPublic(row), token } });
-    if (existing) return reply(existing, 200);
-    const dedupe = sha256([firstName, lastName, phone].join('|').toLowerCase());
-    const searchBase = [firstName, lastName, phone, phone.replace(/^\+374/, '0')].join(' ').toLowerCase();
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const no = newInvitationNo();
-      try {
-        const { rows } = await db.query(
-          `INSERT INTO registrations (event_id, invitation_no, access_token_hash, idempotency_hash, dedupe_key, first_name, last_name, age, phone, search_text) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-          [eventId, no, tokenHash, key ? sha256(key) : null, dedupe, firstName, lastName, age, phone, `${searchBase} ${no.toLowerCase()}`]);
-        return reply(rows[0], 201);
-      } catch (e) {
-        if (isUnique(e, 'invitation_no')) continue; // astronomically rare collision: retry with a new number
-        if (isUnique(e)) {
-          // A concurrent request with the same Idempotency-Key may have won the race: replay its invitation.
-          const row = (await db.query('SELECT * FROM registrations WHERE access_token_hash = $1', [tokenHash])).rows[0];
-          if (row) return reply(row, 200);
-          if (isUnique(e, 'dedupe')) throw new HttpError(409, 'duplicate_registration', M.dup);
-        }
-        throw e;
-      }
-    }
-    throw new HttpError(503, 'busy', M.server);
-  });
-
-  const byToken = async (ctx) => {
-    guard(ctx, 'invite-get', 120, 10 * 60_000);
-    const t = ctx.params.token;
-    const row = /^[A-Za-z0-9_-]{20,64}$/.test(t) ? (await db.query('SELECT * FROM registrations WHERE access_token_hash = $1', [sha256(t)])).rows[0] : null;
-    if (!row) throw new HttpError(404, 'not_found', M.notFound);
-    return row;
-  };
-  R('GET', '/api/invitations/:token', {}, async (ctx) => sendJson(ctx.res, 200, { invitation: regPublic(await byToken(ctx)) }));
-  R('GET', '/api/invitations/:token/pdf', {}, async (ctx) => {
-    const row = await byToken(ctx);
-    const pdf = await renderInvitationPdf(pdfData(row));
-    sendBuffer(ctx.res, 200, pdf, 'application/pdf', { 'Content-Disposition': `attachment; filename="magical-invitation-${row.invitation_no}.pdf"` });
-  });
 
   R('POST', '/api/contact', {}, async (ctx) => {
     guard(ctx, 'contact', 6, 60 * 60_000);
@@ -192,64 +125,11 @@ export async function createApp(config) {
     sendJson(ctx.res, 200, { ok: true });
   });
 
-  // ---------- admin: registrations ---------------------------------------------
-  const SORTS = { created_at: 'id', first_name: 'lower(first_name)', last_name: 'lower(last_name)', age: 'age', phone: 'phone', invitation_no: 'invitation_no', status: 'status' };
+  // ---------- admin: contact messages ------------------------------------------
   R('GET', '/api/admin/stats', { auth: true }, async (ctx) => sendJson(ctx.res, 200, {
-    registrations: await count('SELECT COUNT(*)::int AS c FROM registrations WHERE event_id = $1', [eventId]),
     messages: await count('SELECT COUNT(*)::int AS c FROM contact_messages', []),
     newMessages: await count("SELECT COUNT(*)::int AS c FROM contact_messages WHERE status = 'new'", []),
   }, NO_STORE));
-  // WHERE clause (and its parameters) shared by list, CSV and PDF for the registrations search box.
-  const regFilter = (q) => { const p = params(); const where = `event_id = ${p.add(eventId)}${addSearch(p, q)}`; return { p, where }; };
-  R('GET', '/api/admin/registrations', { auth: true }, async (ctx) => {
-    const q = ctx.url.searchParams;
-    const { p, where } = regFilter(q.get('q'));
-    const col = SORTS[q.get('sort')] || SORTS.created_at, dir = q.get('dir') === 'asc' ? 'ASC' : 'DESC';
-    const pageSize = intParam(q.get('pageSize'), 25, 1, 100);
-    const total = await count(`SELECT COUNT(*)::int AS c FROM registrations WHERE ${where}`, p.list.slice());
-    const page = Math.min(intParam(q.get('page'), 1, 1, 1e6), Math.max(1, Math.ceil(total / pageSize)));
-    const { rows } = await db.query(`SELECT * FROM registrations WHERE ${where} ORDER BY ${col} ${dir}, id ${dir} LIMIT ${p.add(pageSize)} OFFSET ${p.add((page - 1) * pageSize)}`, p.list);
-    sendJson(ctx.res, 200, { items: rows.map(regAdmin), total, page, pageSize }, NO_STORE);
-  });
-  async function* rowsIter(where, args) { // keyset pagination: constant memory for any table size
-    let last = 0;
-    for (;;) {
-      const { rows } = await db.query(`SELECT * FROM registrations WHERE ${where} AND id > $${args.length + 1} ORDER BY id LIMIT 200`, [...args, last]);
-      if (!rows.length) return;
-      for (const r of rows) yield r;
-      last = rows[rows.length - 1].id;
-    }
-  }
-  R('GET', '/api/admin/registrations/export.csv', { auth: true }, async (ctx) => {
-    const { p, where } = regFilter(ctx.url.searchParams.get('q'));
-    const cell = (v) => { let t = String(v ?? ''); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
-    ctx.res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="magical-registrations.csv"', ...NO_STORE });
-    ctx.res.write('\ufeff' + ['invitation_no', 'first_name', 'last_name', 'age', 'phone', 'status', 'registered_at_utc'].join(',') + '\r\n');
-    for await (const r of rowsIter(where, p.list))
-      ctx.res.write([r.invitation_no, r.first_name, r.last_name, r.age, r.phone, r.status, r.created_at].map(cell).join(',') + '\r\n');
-    ctx.res.end();
-  });
-  R('GET', '/api/admin/registrations/pdf', { auth: true }, async (ctx) => {
-    const { p, where } = regFilter(ctx.url.searchParams.get('q'));
-    const total = await count(`SELECT COUNT(*)::int AS c FROM registrations WHERE ${where}`, p.list.slice());
-    if (!total) throw new HttpError(404, 'empty', 'Գրանցումներ չկան։');
-    ctx.res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="magical-invitations-all.pdf"', ...NO_STORE });
-    const rows = (async function* () { for await (const r of rowsIter(where, p.list)) yield pdfData(r); })();
-    await streamInvitationsPdf(streamSink(ctx.res), rows);
-    ctx.res.end();
-  });
-  const regById = async (ctx) => {
-    const r = /^\d{1,9}$/.test(ctx.params.id) ? (await db.query('SELECT * FROM registrations WHERE id = $1 AND event_id = $2', [Number(ctx.params.id), eventId])).rows[0] : null;
-    if (!r) throw new HttpError(404, 'not_found', M.notFound);
-    return r;
-  };
-  R('GET', '/api/admin/registrations/:id', { auth: true }, async (ctx) => sendJson(ctx.res, 200, { registration: regAdmin(await regById(ctx)) }, NO_STORE));
-  R('GET', '/api/admin/registrations/:id/pdf', { auth: true }, async (ctx) => {
-    const row = await regById(ctx);
-    sendBuffer(ctx.res, 200, await renderInvitationPdf(pdfData(row)), 'application/pdf', { 'Content-Disposition': `attachment; filename="magical-invitation-${row.invitation_no}.pdf"` });
-  });
-
-  // ---------- admin: contact messages ------------------------------------------
   R('GET', '/api/admin/messages', { auth: true }, async (ctx) => {
     const q = ctx.url.searchParams;
     const p = params();

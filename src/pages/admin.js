@@ -1,9 +1,8 @@
-import { ticketHtml } from '../modules/ticket-view.js';
 import { viewPioneer } from './admin-pioneer.js';
 
 const app = document.getElementById('app');
 let csrf = '', me = '';
-const state = { tab: 'reg', reg: { q: '', sort: 'created_at', dir: 'desc', page: 1 }, msg: { q: '', status: '', page: 1 }, stats: { registrations: 0, newMessages: 0 } };
+const state = { tab: 'msg', msg: { q: '', status: '', page: 1 }, stats: { messages: 0, newMessages: 0 } };
 const fmt = new Intl.DateTimeFormat('hy-AM', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Yerevan' });
 const when = (iso) => { try { return fmt.format(new Date(iso)); } catch { return iso || ''; } };
 
@@ -74,7 +73,6 @@ async function refreshStats() {
 
 function renderShell() {
   const tabs = h('div.tabs', { role: 'tablist' },
-    h('button.tab', { role: 'tab', 'aria-selected': state.tab === 'reg', onclick: () => { state.tab = 'reg'; boot(); } }, 'Գրանցումներ', h('b', {}, state.stats.registrations)),
     h('button.tab', { role: 'tab', 'aria-selected': state.tab === 'msg', onclick: () => { state.tab = 'msg'; boot(); } }, 'Հաղորդագրություններ', h('b', {}, state.stats.newMessages ? `${state.stats.newMessages} / ${state.stats.messages}` : state.stats.messages)),
     h('button.tab', { role: 'tab', 'aria-selected': state.tab === 'pc', onclick: () => { state.tab = 'pc'; boot(); } }, 'Pioneer Cards', h('b', {}, state.stats.pioneer?.pendingRedemptions ? `${state.stats.pioneer.pendingRedemptions} / ${state.stats.pioneer.cards}` : state.stats.pioneer?.cards ?? 0)));
   const content = h('div', { id: 'content' });
@@ -104,40 +102,6 @@ function pager(box, total, pageSize, page, set) {
   return h('div.pager', {}, h('button.btn.sm', { disabled: page <= 1, onclick: () => set(page - 1) }, '← Նախորդ'), h('span', {}, `${page} / ${pages}`), h('button.btn.sm', { disabled: page >= pages, onclick: () => set(page + 1) }, 'Հաջորդ →'));
 }
 const debounce = (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
-
-async function viewRegistrations(box) {
-  const s = state.reg;
-  const qs = (extra = {}) => new URLSearchParams({ q: s.q, sort: s.sort, dir: s.dir, page: s.page, pageSize: 25, ...extra }).toString();
-  const list = h('div'), count = h('span.count');
-  const search = h('input', { type: 'search', placeholder: 'Որոնում՝ անուն, ազգանուն, հեռախոս, համար', 'aria-label': 'Որոնում', value: s.q, maxlength: 100, oninput: debounce((e) => { s.q = e.target.value; s.page = 1; load(); }) });
-  box.append(h('div.tools', {}, search,
-    h('a.btn.sm', { href: '/api/admin/registrations/export.csv?q=' + encodeURIComponent(s.q) }, 'CSV արտահանում'),
-    h('a.btn.sm.p', { href: '/api/admin/registrations/pdf?q=' + encodeURIComponent(s.q), download: '' }, 'Բոլոր հրավիրատոմսերը (PDF)'), count), list);
-  async function load() {
-    try {
-      const d = await api('/registrations?' + qs());
-      s.page = d.page;
-      count.textContent = `Ընդամենը՝ ${d.total}`;
-      const csv = box.querySelector('a[href*="export.csv"]'), pdf = box.querySelector('a[href*="registrations/pdf"]');
-      csv.href = '/api/admin/registrations/export.csv?q=' + encodeURIComponent(s.q); pdf.href = '/api/admin/registrations/pdf?q=' + encodeURIComponent(s.q);
-      const th = (label, key) => h('th', { 'aria-sort': s.sort === key ? (s.dir === 'asc' ? 'ascending' : 'descending') : 'none' },
-        h('button', { type: 'button', onclick: () => { s.dir = s.sort === key && s.dir === 'desc' ? 'asc' : 'desc'; s.sort = key; s.page = 1; load(); } }, label, s.sort === key ? (s.dir === 'asc' ? ' ▲' : ' ▼') : ''));
-      if (!d.items.length) return list.replaceChildren(h('div.tbl', {}, h('div.empty', {}, 'Գրանցումներ չեն գտնվել։')));
-      list.replaceChildren(h('div.tbl', {}, h('table', {},
-        h('thead', {}, h('tr', {}, th('Անուն', 'first_name'), th('Ազգանուն', 'last_name'), th('Տարիք', 'age'), th('Հեռախոս', 'phone'), th('Հրավիրատոմսի №', 'invitation_no'), th('Գրանցման ամսաթիվ', 'created_at'), h('th'))),
-        h('tbody', {}, d.items.map((r) => h('tr', {}, h('td', {}, r.firstName), h('td', {}, r.lastName), h('td', {}, r.age), h('td', {}, r.phone), h('td', {}, h('span.mono', {}, r.invitationNo)), h('td', {}, when(r.createdAt)),
-          h('td.act', {}, h('button.btn.sm', { type: 'button', onclick: () => openInvitation(r) }, 'Բացել'), h('a.btn.sm', { href: `/api/admin/registrations/${r.id}/pdf`, download: '' }, 'PDF'))))))),
-      pager(list, d.total, d.pageSize, d.page, (p) => { s.page = p; load(); }));
-    } catch (e) { if (e.message !== 'auth') list.replaceChildren(h('div.empty', {}, e.message)); }
-  }
-  await load();
-}
-
-function openInvitation(r) {
-  const holder = h('div'); holder.innerHTML = ticketHtml({ number: r.invitationNo, firstName: r.firstName, lastName: r.lastName });
-  modal(`${r.firstName} ${r.lastName}`, h('div', {}, h('dl.kv', {}, h('dt', {}, 'Տարիք'), h('dd', {}, r.age), h('dt', {}, 'Հեռախոս'), h('dd', {}, r.phone), h('dt', {}, 'Գրանցվել է'), h('dd', {}, when(r.createdAt))), holder,
-    h('div.macts', { style: 'margin-top:18px' }, h('a.btn.p', { href: `/api/admin/registrations/${r.id}/pdf`, download: '' }, 'Ներբեռնել PDF'))));
-}
 
 const STATUS = { new: 'Նոր', read: 'Կարդացված', processed: 'Մշակված' };
 async function viewMessages(box) {
@@ -178,7 +142,7 @@ async function boot() {
     if (!csrf) { const d = await api('/me'); csrf = d.csrfToken; me = d.username; }
     await refreshStats();
     const box = renderShell();
-    await (state.tab === 'reg' ? viewRegistrations(box) : state.tab === 'pc' ? viewPioneer(box, { h, api, modal, pager, debounce, when }) : viewMessages(box));
+    await (state.tab === 'pc' ? viewPioneer(box, { h, api, modal, pager, debounce, when }) : viewMessages(box));
   } catch (e) { if (e.message === 'auth') return; renderLogin(); }
 }
 
