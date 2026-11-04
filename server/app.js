@@ -5,6 +5,7 @@ import { HttpError, Router, sendJson, readJson } from './http.js';
 import { RateLimiter, sha256, randomToken, safeEqual, hashPassword, verifyPassword, DUMMY_HASH, clientIp, parseCookies, setSecurityHeaders } from './security.js';
 import { serveStatic } from './static.js';
 import { registerPioneer } from './pioneer.js';
+import { registerIntegration } from './integration.js';
 import { existsSync } from 'node:fs';
 
 const COOKIE = 'mg_admin';
@@ -158,6 +159,9 @@ export async function createApp(config) {
   // ---------- Pioneer Card (server/pioneer.js) ---------------------------------
   const pioneer = registerPioneer({ R, db, config, limiter, guard, params, addSearch, count, intParam });
 
+  // ---------- external integration API (server/integration.js) -----------------
+  registerIntegration({ R, db, config, limiter, pioneer });
+
   // ---------- dispatcher -------------------------------------------------------
   const server = http.createServer(async (req, res) => {
     const started = Date.now();
@@ -168,9 +172,9 @@ export async function createApp(config) {
       const path = ctx.url.pathname;
       const isApi = path.startsWith('/api/');
       setSecurityHeaders(res, { secure: config.cookieSecure });
-      // CORS: only for explicitly allowed origins
+      // CORS: only for explicitly allowed origins, never for the server-to-server integration API
       const origin = req.headers.origin;
-      if (origin && config.allowedOrigins.includes(origin.replace(/\/$/, ''))) {
+      if (origin && !path.startsWith('/api/integration/') && config.allowedOrigins.includes(origin.replace(/\/$/, ''))) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Vary', 'Origin');

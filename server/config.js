@@ -60,6 +60,9 @@ export function loadConfig(env = process.env) {
     pioneerSessionHours: Math.min(72, Math.max(1, int(env.PIONEER_SESSION_TTL_HOURS, 4))),
     pioneerPepper: env.PIONEER_CVV_PEPPER || '', // optional; changing it invalidates every CVV (reset via admin)
     rateLimits: env.DISABLE_RATE_LIMITS === 'true' ? false : true,
+    // Integration API (/api/integration/v1): refuse plain-HTTP requests. Default on in production; behind a
+    // reverse proxy this needs TRUST_PROXY=true so X-Forwarded-Proto is honoured.
+    integrationRequireHttps: env.INTEGRATION_REQUIRE_HTTPS ? env.INTEGRATION_REQUIRE_HTTPS === 'true' : prod,
   };
   if (!cfg.appSecret) {
     if (prod) throw new Error('APP_SECRET must be set (at least 32 characters) when NODE_ENV=production');

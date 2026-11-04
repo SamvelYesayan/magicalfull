@@ -140,12 +140,10 @@ export function registerPioneer({ R, db, config, limiter, guard, params, addSear
     return rows[0] || null;
   };
 
-  R('POST', '/api/pioneer/login', {}, async (ctx) => {
-    guard(ctx, 'pc-login-ip', 15, 15 * 60_000);
-    guard(ctx, 'pc-login-ip-day', 60, 24 * 3600_000);
-    const body = await readJson(ctx.req, 1000);
-    const cardNo = normalizeCardNo(body.cardNumber), cvv = normalizeCvv(body.cvv);
-    if (!cardNo || !cvv) throw new HttpError(422, 'validation_failed', M.validation, { ...(!cardNo && { cardNumber: PIONEER_MSG.cardNumber }), ...(!cvv && { cvv: PIONEER_MSG.cvv }) });
+  // Card number + CVV check with the per-card lockout. Shared by the cardholder login and the integration API
+  // (server/integration.js), so both draw on ONE failure budget per card number.
+  // Returns { locked, hard, retryAfter } | { ok: false, attemptsBeforeLock } | { ok: true, card }.
+  const checkCredentials = async (cardNo, cvv) => {
     // Count the attempt BEFORE verifying (atomic upsert), unless the number is currently locked.
     // Real and non-existent card numbers go through exactly the same path.
     const g = (await db.query(
@@ -154,14 +152,25 @@ export function registerPioneer({ R, db, config, limiter, guard, params, addSear
        WHERE g.locked_until IS NULL OR g.locked_until <= now() RETURNING failures`, [cardNo])).rows[0];
     if (!g) {
       const until = (await db.query(`SELECT locked_until = 'infinity' AS hard, CASE WHEN locked_until = 'infinity' THEN NULL ELSE GREATEST(1, CEIL(EXTRACT(EPOCH FROM locked_until - now())))::int END AS secs FROM pioneer_login_guard WHERE card_no = $1`, [cardNo])).rows[0];
-      const e = new HttpError(429, until?.hard ? 'card_locked' : 'too_many_attempts', until?.hard ? M.hardLocked : M.locked);
-      if (until && !until.hard) e.retryAfter = until.secs;
-      throw e;
+      return { locked: true, hard: !!until?.hard, retryAfter: until?.hard ? null : until?.secs ?? 1 };
     }
-    const card = (await db.query('SELECT id, cvv_hash, status FROM pioneer_cards WHERE card_no = $1', [cardNo])).rows[0];
+    const card = (await db.query('SELECT id, card_no, cvv_hash, status FROM pioneer_cards WHERE card_no = $1', [cardNo])).rows[0];
     const ok = await verifyCvv(cardNo, cvv, card ? card.cvv_hash : DUMMY_HASH); // same scrypt cost either way
-    if (!card || !ok) throw new HttpError(401, 'invalid_credentials', M.login, { attemptsBeforeLock: Math.max(0, (g.failures < LOCK_AFTER ? LOCK_AFTER : HARD_LOCK_AFTER) - g.failures) });
+    if (!card || !ok) return { ok: false, attemptsBeforeLock: Math.max(0, (g.failures < LOCK_AFTER ? LOCK_AFTER : HARD_LOCK_AFTER) - g.failures) };
     await db.query('DELETE FROM pioneer_login_guard WHERE card_no = $1', [cardNo]);
+    return { ok: true, card: { id: card.id, card_no: card.card_no, status: card.status } };
+  };
+
+  R('POST', '/api/pioneer/login', {}, async (ctx) => {
+    guard(ctx, 'pc-login-ip', 15, 15 * 60_000);
+    guard(ctx, 'pc-login-ip-day', 60, 24 * 3600_000);
+    const body = await readJson(ctx.req, 1000);
+    const cardNo = normalizeCardNo(body.cardNumber), cvv = normalizeCvv(body.cvv);
+    if (!cardNo || !cvv) throw new HttpError(422, 'validation_failed', M.validation, { ...(!cardNo && { cardNumber: PIONEER_MSG.cardNumber }), ...(!cvv && { cvv: PIONEER_MSG.cvv }) });
+    const v = await checkCredentials(cardNo, cvv);
+    if (v.locked) { const e = new HttpError(429, v.hard ? 'card_locked' : 'too_many_attempts', v.hard ? M.hardLocked : M.locked); if (!v.hard) e.retryAfter = v.retryAfter; throw e; }
+    if (!v.ok) throw new HttpError(401, 'invalid_credentials', M.login, { attemptsBeforeLock: v.attemptsBeforeLock });
+    const card = v.card;
     if (card.status !== 'active') throw new HttpError(403, 'card_inactive', M.inactive);
     // New session id on every login; the previous cookie (if any) is revoked.
     const old = parseCookies(ctx.req.headers.cookie)[PIONEER_COOKIE];
@@ -814,5 +823,5 @@ export function registerPioneer({ R, db, config, limiter, guard, params, addSear
     sendJson(ctx.res, 200, { announcement: annOut(r) }, NO_STORE);
   });
 
-  return { sessionFrom, MEMBER_FALLBACK };
+  return { sessionFrom, MEMBER_FALLBACK, checkCredentials };
 }

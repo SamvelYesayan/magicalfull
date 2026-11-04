@@ -123,6 +123,10 @@ npm start                        # production mode; same command on Windows and 
 
 Errors are always `{ "error": { "code", "message" (Armenian), "fields"? } }`.
 
+## Integration API (partners, e.g. the Christmas Store)
+
+Server-to-server API under `/api/integration/v1` for verifying Pioneer Cards, linking them to partner customer accounts and reading balance, history and rewards. API keys are managed with `npm run integration -- create-key|rotate-key|revoke-key|list-keys|list-links|unlink`. Full reference: [`docs/PIONEER_CARD_API.md`](docs/PIONEER_CARD_API.md); Postman collection: `docs/pioneer-card-api.postman_collection.json`.
+
 ## Tests
 
 Tests need the isolated database `magical_web_test` from the setup above:
