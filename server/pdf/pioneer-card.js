@@ -10,8 +10,8 @@ export const CARD_W = +(85.6 * MM).toFixed(2), CARD_H = +(53.98 * MM).toFixed(2)
 
 export const BG = [0.059, 0.039, 0.122], PRI = [0.545, 0.361, 0.965], PRI2 = [0.769, 0.71, 0.992], SKY = [0.22, 0.74, 0.973];
 export const TXT = [0.98, 0.98, 0.98], MUT = [0.72, 0.7, 0.8], LINE = [0.6, 0.56, 0.72];
-// the six small labels, a little brighter than MUT / PRI2 so they stay readable when printed on the dark card
-const LABEL = [0.831, 0.816, 0.894], LABEL_ACCENT = [0.847, 0.8, 1]; // #D4D0E4, #D8CCFF
+// the six small labels (CVV, CARD NUMBER, CARDHOLDER, MEMBER, magical.am, PIONEER CARD): solid light colour, no transparency
+const LABEL = [0.941, 0.929, 0.969], LABEL_ACCENT = LABEL; // #F0EDF7
 export const fnc = (c0, c1, n = 1) => `<< /FunctionType 2 /Domain [0 1] /C0 [${c0.join(' ')}] /C1 [${c1.join(' ')}] /N ${n} >>`;
 export const mix = (a, b, t) => a.map((v, i) => +(v + (b[i] - v) * t).toFixed(4));
 

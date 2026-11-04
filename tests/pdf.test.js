@@ -4,10 +4,10 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getResources, renderInvitationPdf } from '../server/pdf/ticket.js';
-import { EVENT } from '../shared/event.js';
+import { getResources } from '../server/pdf/ticket.js';
+import { renderPioneerCardPdf } from '../server/pdf/pioneer-card.js';
 
-test('fonts cover the complete Armenian alphabet, digits, Latin and Cyrillic used in names/ticket', () => {
+test('fonts cover the complete Armenian alphabet, digits, Latin and Cyrillic used in names', () => {
   const { B4, B7, DISP } = getResources();
   const cps = [];
   for (let c = 0x531; c <= 0x556; c++) cps.push(c);
@@ -15,26 +15,22 @@ test('fonts cover the complete Armenian alphabet, digits, Latin and Cyrillic use
   cps.push(0x589, 0xab, 0xbb, 0x2d, 0x27, 0x2019, 0x2e, 0x3a, 0x20);
   for (const ch of '0123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÜüÑñ' + 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяЁё') cps.push(ch.codePointAt(0));
   for (const stack of [B4, B7, DISP]) for (const cp of cps) assert.ok(stack.has(cp), `${String.fromCodePoint(cp)} U+${cp.toString(16)} missing`);
-  for (const t of [EVENT.name, EVENT.location, EVENT.giftsNote, EVENT.dateText, 'ՀՐԱՎԻՐՎՈՒՄ Է', 'ԱՄՍԱԹԻՎ', 'ԺԱՄ', 'ՎԱՅՐ', 'ՀՐԱՎԻՐԱՏՈՄՍ', 'ՀՐԱՎԻՐԱՏՈՄՍԻ ՀԱՄԱՐ'])
-    for (const ch of t) assert.ok(B7.has(ch.codePointAt(0)) && B4.has(ch.codePointAt(0)), `ticket text char ${ch} missing`);
 });
 
-test('PDF text layer round-trips Armenian, Cyrillic and Latin names (poppler, if installed)', async (t) => {
-  if (spawnSync('pdftotext', ['-v']).error) return t.skip('pdftotext not installed');
+test('PDF text layer is extractable and every font is embedded (poppler, if installed)', async (t) => {
+  if (['pdftotext', 'pdffonts', 'pdfinfo'].some((x) => spawnSync(x, ['-v']).error)) return t.skip('poppler tools not installed');
   const dir = mkdtempSync(join(tmpdir(), 'mg-'));
   const f = join(dir, 't.pdf');
-  writeFileSync(f, await renderInvitationPdf({ firstName: 'Աննա-Մարիամ', lastName: 'Մելիք-Շահնազարյան', invitationNo: 'MGC-7K4P2Q' }));
+  writeFileSync(f, await renderPioneerCardPdf({ number: '12345678', firstName: 'Աննա', lastName: 'Գրիգորյան' }));
   const text = execFileSync('pdftotext', [f, '-'], { encoding: 'utf8' });
-  for (const s of ['Աննա-Մարիամ Մելիք-Շահնազարյան', 'MGC-7K4P2Q', `«${EVENT.name}»`, EVENT.dateText, EVENT.time, 'Գագարին ավանի', EVENT.giftsNote, 'MAGICAL']) assert.ok(text.includes(s), `missing: ${s}`);
-  writeFileSync(f, await renderInvitationPdf({ firstName: 'Иван', lastName: 'Ñandú', invitationNo: 'MGC-ABCDEF' }));
-  assert.ok(execFileSync('pdftotext', [f, '-'], { encoding: 'utf8' }).includes('Иван Ñandú'));
+  for (const t of ['PIONEER CARD', 'CARD NUMBER', '1234 5678']) assert.ok(text.includes(t), 'missing: ' + t);
   const info = execFileSync('pdffonts', [f], { encoding: 'utf8' });
   for (const line of info.split('\n').slice(2).filter(Boolean)) assert.match(line, /\byes\b/, 'every font must be embedded: ' + line);
   assert.equal(execFileSync('pdfinfo', [f], { encoding: 'utf8' }).match(/Pages:\s+(\d+)/)[1], '1');
 });
 
 test('PDF contains no unwritten objects and a valid xref', async () => {
-  const buf = await renderInvitationPdf({ firstName: 'Աննա', lastName: 'Գրիգորյան', invitationNo: 'MGC-ABCDEF' });
+  const buf = await renderPioneerCardPdf({ number: '12345678', firstName: 'Աննա', lastName: 'Գրիգորյան' });
   const s = buf.toString('latin1');
   const start = Number(/startxref\n(\d+)\n%%EOF\n$/.exec(s)[1]);
   assert.equal(s.slice(start, start + 4), 'xref');

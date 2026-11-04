@@ -5,13 +5,9 @@ const SCRIPTS = '\\p{Script=Armenian}\\p{Script=Latin}\\p{Script=Cyrillic}';
 const NAME_RE = new RegExp(`^[${SCRIPTS}][${SCRIPTS}\\p{M} '’.\\-]*$`, 'u');
 
 export const MSG = {
-  firstNameRequired: 'Մուտքագրեք ձեր անունը։',
-  lastNameRequired: 'Մուտքագրեք ձեր ազգանունը։',
   nameShort: 'Նվազագույնը 2 նիշ։',
   nameLong: 'Առավելագույնը 50 նիշ։',
   nameChars: 'Թույլատրվում են միայն հայերեն, լատինատառ կամ կիրիլյան տառեր։',
-  ageRequired: 'Մուտքագրեք ձեր տարիքը։',
-  ageInvalid: 'Տարիքը պետք է լինի ամբողջ թիվ՝ 1-ից 120։',
   phoneRequired: 'Մուտքագրեք հեռախոսահամարը։',
   phoneInvalid: 'Մուտքագրեք վավեր հեռախոսահամար, օրինակ՝ +374 77 123456 կամ 077 123456։',
   emailRequired: 'Մուտքագրեք էլ. փոստի հասցեն։',
@@ -31,15 +27,6 @@ export function validateName(raw, requiredMsg) {
   if ([...v].length > 50) return { error: MSG.nameLong };
   if (!NAME_RE.test(v)) return { error: MSG.nameChars };
   return { value: v };
-}
-
-export function validateAge(raw) {
-  const v = str(raw).trim();
-  if (!v) return { error: MSG.ageRequired };
-  if (!/^\d{1,3}$/.test(v)) return { error: MSG.ageInvalid };
-  const n = Number(v);
-  if (n < 1 || n > 120) return { error: MSG.ageInvalid };
-  return { value: n };
 }
 
 /**
@@ -78,20 +65,6 @@ export function validateEmail(raw) {
   if (!v) return { error: MSG.emailRequired };
   if (v.length > 254 || !/^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[A-Za-z\u0561-\u0586]{2,}$/.test(v)) return { error: MSG.emailInvalid };
   return { value: v.toLowerCase() };
-}
-
-export function validateRegistration(input = {}) {
-  const errors = {};
-  const values = {};
-  const f = validateName(input.firstName, MSG.firstNameRequired);
-  const l = validateName(input.lastName, MSG.lastNameRequired);
-  const a = validateAge(input.age);
-  const p = validatePhone(input.phone);
-  for (const [k, r] of [['firstName', f], ['lastName', l], ['age', a], ['phone', p]]) {
-    if (r.error) errors[k] = r.error;
-    else values[k] = r.value;
-  }
-  return { ok: Object.keys(errors).length === 0, values, errors };
 }
 
 export const SERVICES = [

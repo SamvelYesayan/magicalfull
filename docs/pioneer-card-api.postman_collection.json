@@ -1,0 +1,242 @@
+{
+  "info": {
+    "name": "Magical Pioneer Card — Integration API v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "See docs/PIONEER_CARD_API.md. Set baseUrl and apiKey (as a secret current value; never export it)."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiKey}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:3000/api/integration/v1"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "customerId",
+      "value": "cust_8412"
+    },
+    {
+      "key": "rewardId",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Check API key",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "me"
+          ]
+        },
+        "description": "Returns the client name and scopes of the key."
+      }
+    },
+    {
+      "name": "Verify card",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cards/verify",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "cards",
+            "verify"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cardNumber\": \"12345678\",\n  \"cvv\": \"123\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Scope cards:verify. Counts against the per-card lockout."
+      }
+    },
+    {
+      "name": "Link card to customer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/links",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "links"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"cardNumber\": \"12345678\",\n  \"cvv\": \"123\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Scope cards:link. 201 new, 200 existing."
+      }
+    },
+    {
+      "name": "Card info and balance",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/customers/{{customerId}}/card",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "customers",
+            "{{customerId}}",
+            "card"
+          ]
+        },
+        "description": "Scope cards:read."
+      }
+    },
+    {
+      "name": "Transaction history",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/customers/{{customerId}}/transactions?page=1&pageSize=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "customers",
+            "{{customerId}}",
+            "transactions"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "pageSize",
+              "value": "20"
+            }
+          ]
+        },
+        "description": "Scope cards:read."
+      }
+    },
+    {
+      "name": "Reward catalog",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/rewards",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "rewards"
+          ]
+        },
+        "description": "Scope rewards:read."
+      }
+    },
+    {
+      "name": "Rewards with eligibility",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/customers/{{customerId}}/rewards",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "customers",
+            "{{customerId}}",
+            "rewards"
+          ]
+        },
+        "description": "Scope rewards:read."
+      }
+    },
+    {
+      "name": "Reward eligibility",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/customers/{{customerId}}/rewards/{{rewardId}}/eligibility",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "customers",
+            "{{customerId}}",
+            "rewards",
+            "{{rewardId}}",
+            "eligibility"
+          ]
+        },
+        "description": "Scope rewards:read."
+      }
+    },
+    {
+      "name": "Unlink card",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/customers/{{customerId}}/link",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "customers",
+            "{{customerId}}",
+            "link"
+          ]
+        },
+        "description": "Scope cards:link."
+      }
+    }
+  ]
+}

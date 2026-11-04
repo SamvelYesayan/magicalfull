@@ -31,7 +31,8 @@ const ledgerConsistent = async (s) => (await s.q('SELECT COUNT(*)::int AS c FROM
 
 test('pioneer migration is additive: existing records survive, re-running is a no-op', async () => {
   const s = await start();
-  await s.api('/api/registrations', { method: 'POST', body: { firstName: 'Աննա', lastName: 'Գրիգորյան', age: '25', phone: '+374 77 123456' } });
+  const ev = (await s.q("INSERT INTO events (slug, title) VALUES ('old-seminar', 'Old seminar') ON CONFLICT (slug) DO UPDATE SET title = EXCLUDED.title RETURNING id")).rows[0].id; // historical seminar data
+  await s.q("INSERT INTO registrations (event_id, invitation_no, access_token_hash, dedupe_key, first_name, last_name, age, phone, search_text) VALUES ($1, 'MGC-ABCDEF', 'h', 'd', 'Աննա', 'Գրիգորյան', 25, '+37477123456', 'x')", [ev]);
   await s.close();
   const url = await verifyTestDatabase();
   const p = createPool(loadConfig({ NODE_ENV: 'test', APP_SECRET: 's'.repeat(40), DATABASE_URL: url }));

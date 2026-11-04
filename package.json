@@ -10,6 +10,7 @@
     "server": "node server/index.js",
     "start": "node server/index.js --production",
     "seed:admin": "node server/seed-admin.js",
+    "integration": "node server/integration-cli.js",
     "test": "node --test --test-concurrency=1 --test-timeout=60000 \"tests/**/*.test.js\"",
     "migrate": "node server/migrate.js"
   },

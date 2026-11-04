@@ -37,7 +37,7 @@ Vite + vanilla JavaScript (no framework). English and Armenian.
 
 ---
 
-# Event registration, invitations, contact form & admin panel
+# Backend: contact form, admin panel & Pioneer Card
 
 This section documents the backend added on top of the (unchanged) Magical website.
 
@@ -45,17 +45,17 @@ This section documents the backend added on top of the (unchanged) Magical websi
 
 | Part | Technology | Notes |
 |---|---|---|
-| Frontend | Existing vanilla JS + Vite site (**not React**) | Existing sections untouched. Added pages `invitation.html`, `admin.html`; popup in `src/modules/announce.js`. |
+| Frontend | Existing vanilla JS + Vite site (**not React**) | Existing sections untouched. Added pages `admin.html`, `pioneer.html`. |
 | Backend | Node.js (see `engines` in `package.json`) | `server/` - plain `node:http` + `node:crypto`; the only runtime dependency is the `pg` driver. |
 | Database | **PostgreSQL 13+** (only supported database) | `server/migrations-postgres/*.sql`, applied transactionally at start-up (advisory-locked) or with `npm run migrate`. |
-| PDF | Own dependency-free PDF writer (`server/pdf/`) | Embeds Noto Sans Armenian, Inter (Latin/Latin-Ext/Cyrillic) and Outfit (all SIL OFL, licences in `server/assets/fonts/`). Streams, so a bundle of thousands of tickets uses little memory. |
-| Shared code | `shared/` | Event text (`event.js`), validation (`validation.js`), barcode (`code39.js`) used by browser *and* server. |
+| PDF | Own dependency-free PDF writer (`server/pdf/`) | Embeds Noto Sans Armenian, Inter (Latin/Latin-Ext/Cyrillic) and Outfit (all SIL OFL, licences in `server/assets/fonts/`). Used for the Pioneer Card PDFs. |
+| Shared code | `shared/` | Validation (`validation.js`, `pioneer.js`) used by browser *and* server. |
 
 **Database note.** Searching is case-insensitive for any script because the app stores a lower-cased `search_text`. Sorting by name uses `lower()`, so create the database with a UTF-8 locale that knows Armenian/Cyrillic case folding (e.g. `en_US.UTF-8` / an ICU locale; on Windows the default is fine). A database created with the `C` locale will not fold non-ASCII case when sorting.
 
-## Change the event
+## Completed seminar (removed 2026-11-02)
 
-Edit **`shared/event.js`** (title, date text, time, location, popup text). No year is stored or displayed.
+The seminar registration system (popup, `/invitation` page, invitation PDFs, admin "Գրանցումներ" tab and their API endpoints) was removed after the seminar ended. Old `/invitation` links redirect to `/`. The `events` and `registrations` tables and all their rows are intentionally **kept** as historical data; nothing reads or writes them any more.
 
 ## PostgreSQL setup
 
@@ -87,7 +87,7 @@ Safe to repeat: an existing admin is left untouched unless you add `-- --reset`.
 npm run server                   # backend (API) on http://127.0.0.1:3000
 npm run dev                      # frontend (Vite) on http://localhost:5173, proxies /api to :3000
 ```
-Pages: `/` (site + popup), `/invitation`, `/admin`, `/pioneer-card` (see "Magical Pioneer Card" below).
+Pages: `/`, `/admin`, `/pioneer-card` (see "Magical Pioneer Card" below).
 
 ## Production deployment
 
@@ -98,7 +98,7 @@ npm run migrate                  # optional: the server also migrates at start (
 # create the admin once (see above), then remove ADMIN_PASSWORD from the environment/.env
 npm start                        # production mode; same command on Windows and Linux
 ```
-- Put it behind HTTPS (nginx/Caddy) and proxy everything (`/`, `/api`, `/admin`, `/invitation`) to the Node process; set `TRUST_PROXY=true` so rate limits use the real client IP. The admin cookie is `Secure`, so HTTPS is required in production.
+- Put it behind HTTPS (nginx/Caddy) and proxy everything (`/`, `/api`, `/admin`, `/pioneer-card`) to the Node process; set `TRUST_PROXY=true` so rate limits use the real client IP. The admin cookie is `Secure`, so HTTPS is required in production.
 - Back up the PostgreSQL database (`pg_dump`). Keep `.env` out of git (already in `.gitignore`). Use `DATABASE_SSL=true` for managed databases that require TLS.
 - Several app instances may share one database (migrations are serialised by an advisory lock), but the rate limiter is in memory per process.
 
@@ -106,9 +106,7 @@ npm start                        # production mode; same command on Windows and 
 
 - Passwords: scrypt (N=32768), constant-time verify, dummy hash for unknown users. Sessions: random 256-bit cookie, only its SHA-256 is stored; `HttpOnly; SameSite=Strict; Secure`.
 - CSRF: per-session token (`X-CSRF-Token`) on every state-changing admin call + Origin check on all non-GET requests.
-- Rate limits: login (5/15 min per username, 20 per IP), registration (8/10 min, 40/h per IP), contact (6/h), invitation lookup.
-- Invitations are reachable only through a 256-bit secret link token (`/invitation#t=...`; only its hash is stored). Numeric IDs and invitation numbers cannot be used to read tickets. Public responses contain name + invitation number only (no phone/age).
-- Duplicate submits: client disables the button and sends an `Idempotency-Key`; the server replays the same invitation for the same key, and returns 409 for the same first name + last name + phone.
+- Rate limits: login (5/15 min per username, 20 per IP), contact (6/h), Pioneer Card endpoints (see below).
 - Contact spam: honeypot field, minimum fill time, link-count limit, rate limit. No CAPTCHA.
 - CSP, `X-Frame-Options: DENY`, `nosniff`, HSTS (when secure), `no-store` on admin/PDF responses; parameterised SQL only; admin UI renders data with `textContent`; CSV cells starting with `= + - @` are neutralised; errors never include stack traces.
 
@@ -117,21 +115,17 @@ npm start                        # production mode; same command on Windows and 
 | Method & path | Auth | Purpose |
 |---|---|---|
 | `GET /api/health` | - | Liveness |
-| `GET /api/event` | - | Public event info |
-| `POST /api/registrations` | - | Register `{firstName,lastName,age,phone}` (optional `Idempotency-Key`) -> `201 {invitation:{number,firstName,lastName,token,...}}` |
-| `GET /api/invitations/:token` | secret token | Own invitation JSON |
-| `GET /api/invitations/:token/pdf` | secret token | Own invitation PDF |
 | `POST /api/contact` | - | Contact form `{name,email,phone?,service?,message?,website,ts}` |
 | `POST /api/admin/login`, `POST /api/admin/logout`, `GET /api/admin/me`, `POST /api/admin/password` | login / session | Admin session |
-| `GET /api/admin/stats` | session | Counts |
-| `GET /api/admin/registrations?q&sort&dir&page&pageSize` | session | List/search/sort/paginate |
-| `GET /api/admin/registrations/:id` and `/:id/pdf` | session | One registration / its PDF |
-| `GET /api/admin/registrations/export.csv?q` | session | CSV (UTF-8 BOM, opens correctly in Excel) |
-| `GET /api/admin/registrations/pdf?q` | session | One PDF, one ticket per page (streamed) |
+| `GET /api/admin/stats` | session | Contact message counts |
 | `GET /api/admin/messages?q&status&page` , `GET /api/admin/messages/:id` | session | Contact messages |
 | `PATCH /api/admin/messages/:id` `{status: new\|read\|processed}` | session + CSRF | Update status |
 
 Errors are always `{ "error": { "code", "message" (Armenian), "fields"? } }`.
+
+## Integration API (partners, e.g. the Christmas Store)
+
+Server-to-server API under `/api/integration/v1` for verifying Pioneer Cards, linking them to partner customer accounts and reading balance, history and rewards. API keys are managed with `npm run integration -- create-key|rotate-key|revoke-key|list-keys|list-links|unlink`. Full reference: [`docs/PIONEER_CARD_API.md`](docs/PIONEER_CARD_API.md); Postman collection: `docs/pioneer-card-api.postman_collection.json`.
 
 ## Tests
 

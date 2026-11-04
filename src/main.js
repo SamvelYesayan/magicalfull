@@ -6,4 +6,3 @@ import './modules/reveal.js';
 import './modules/menu.js';
 import './modules/i18n.js';
 import './modules/motion.js';
-import './modules/announce.js';
