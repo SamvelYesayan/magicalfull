@@ -52,6 +52,8 @@ export const TX_LABELS = {
   redemption_refund: 'Պարգևի չեղարկում (վերադարձ)',
   admin_credit: 'Ադմինիստրատիվ հավելում',
   admin_debit: 'Ադմինիստրատիվ նվազեցում',
+  partner_credit: 'Գործընկերոջ բոնուս',
+  partner_redemption: 'Փոխանակում գործընկերոջ մոտ',
 };
 
 // Gift card for approved redemption requests: contact numbers shown on the card (display text + tel: value).

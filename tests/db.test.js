@@ -8,7 +8,7 @@ import { loadConfig } from '../server/config.js';
 import { start, verifyTestDatabase } from './helpers.js';
 
 const PIONEER = ['pioneer_announcements', 'pioneer_audit_log', 'pioneer_cards', 'pioneer_login_guard', 'pioneer_redemptions', 'pioneer_rewards', 'pioneer_sessions', 'pioneer_settings', 'pioneer_transactions', 'pioneer_transfers'];
-const INTEGRATION = ['integration_clients', 'integration_request_log', 'pioneer_card_links'];
+const INTEGRATION = ['integration_clients', 'integration_request_log', 'pioneer_card_links', 'partner_point_operations'];
 const ALL = `admin_sessions, admins, contact_messages, registrations, events, schema_migrations, mig_t1, mig_t2, ${PIONEER.join(', ')}, ${INTEGRATION.join(', ')}`;
 async function pool() {
   const url = await verifyTestDatabase(); // refuses anything that is not the dedicated *_test database
@@ -24,7 +24,7 @@ test('migrations apply to an empty database, are idempotent, and safe when start
     const results = await Promise.all([migrate(p), migrate(p), migrate(p), migrate(p)]); // simultaneous "startups"
     assert.equal(results.filter((r) => r.length).length, 1, 'exactly one process applies the migration');
     assert.deepEqual((await tables(p)).sort(), ['admin_sessions', 'admins', 'contact_messages', 'events', ...PIONEER, ...INTEGRATION, 'registrations', 'schema_migrations'].sort());
-    assert.deepEqual((await p.query('SELECT version FROM schema_migrations ORDER BY 1')).rows.map((r) => r.version), ['001_init.sql', '002_pioneer.sql', '003_pioneer_gift_card.sql', '004_pioneer_cvv_escrow.sql', '005_integration_api.sql']);
+    assert.deepEqual((await p.query('SELECT version FROM schema_migrations ORDER BY 1')).rows.map((r) => r.version), ['001_init.sql', '002_pioneer.sql', '003_pioneer_gift_card.sql', '004_pioneer_cvv_escrow.sql', '005_integration_api.sql', '006_partner_points.sql']);
     assert.deepEqual(await migrate(p), []);
     // constraints really exist
     await p.query("INSERT INTO events (slug, title) VALUES ('e', 't')");

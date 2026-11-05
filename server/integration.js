@@ -6,10 +6,20 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { withTransaction, isUnique } from './db.js';
 import { HttpError, sendJson, readJson } from './http.js';
-import { normalizeCardNo, normalizeCvv, maskCardNo, displayName, TX_LABELS } from '../shared/pioneer.js';
+import { normalizeCardNo, normalizeCvv, maskCardNo, displayName, TX_LABELS, MAX_POINTS_OP } from '../shared/pioneer.js';
+import { clean } from '../shared/validation.js';
 
 export const BASE = '/api/integration/v1';
+// Scopes a new key gets by default. Points scopes are never default: an administrator grants them explicitly.
 export const SCOPES = ['cards:verify', 'cards:link', 'cards:read', 'rewards:read'];
+export const POINT_SCOPES = ['points:credit', 'points:debit'];
+export const ALL_SCOPES = [...SCOPES, ...POINT_SCOPES];
+export const LIMIT_COLUMNS = { 'credit-per-operation': 'max_credit_per_operation', 'credit-per-card-per-day': 'max_credit_per_card_per_day', 'credit-per-day': 'max_credit_per_day', 'debit-per-operation': 'max_debit_per_operation' };
+const IDEM_RE = /^[A-Za-z0-9._:-]{8,200}$/;
+const REF_RE = /^[A-Za-z0-9._:-]{3,100}$/;
+const REASON_RE = /^[a-z][a-z0-9_]{1,39}$/;
+// "christmas-store" -> "Christmas Store" when no display name is set
+export const partnerLabel = (c) => c.display_name || c.name.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 const KEY_RE = /^mgpc_[A-Za-z0-9_-]{43}$/;
 const CUSTOMER_RE = /^[A-Za-z0-9._:@-]{1,128}$/;
 const NO_STORE = { 'Cache-Control': 'no-store' };
@@ -36,6 +46,12 @@ const E = {
   customerLinked: 'This customer already has a different Pioneer Card linked. Unlink it first.',
   noLink: 'No Pioneer Card is linked to this customer.',
   noReward: 'Reward not found or not available.',
+  idemMissing: 'An Idempotency-Key header is required: 8-200 characters from A-Z a-z 0-9 . _ : -, unique per operation.',
+  points: `"points" must be a whole number from 1 to ${MAX_POINTS_OP}.`,
+  insufficient: 'The card does not have enough points.',
+  duplicateRef: 'An operation with this reference already exists for this partner.',
+  idemConflict: 'This Idempotency-Key was already used with different request data.',
+  limit: 'This operation exceeds a limit configured for this partner.',
 };
 const fieldErr = (fields) => new HttpError(422, 'validation_failed', E.validation, fields);
 
@@ -50,7 +66,9 @@ export function registerIntegration({ R, db, config, limiter, pioneer }) {
   const authenticate = async (ctx) => {
     const m = /^Bearer\s+(\S+)$/i.exec(String(ctx.req.headers.authorization || ''));
     const key = m && KEY_RE.test(m[1]) ? m[1] : null;
-    const client = key ? (await db.query("SELECT id, name, scopes FROM integration_clients WHERE key_hash = $1 AND status = 'active'", [hashKey(key)])).rows[0] : null;
+    const client = key ? (await db.query(
+      `SELECT id, name, scopes, display_name, max_credit_per_operation, max_credit_per_card_per_day, max_credit_per_day, max_debit_per_operation
+       FROM integration_clients WHERE key_hash = $1 AND status = 'active'`, [hashKey(key)])).rows[0] : null;
     if (!client) { limit(`int-badkey:${ctx.ip}`, 30, 15 * 60_000); throw new HttpError(401, 'invalid_api_key', E.auth); }
     db.query("UPDATE integration_clients SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')", [client.id]).catch(() => {});
     return client;
@@ -67,6 +85,7 @@ export function registerIntegration({ R, db, config, limiter, pioneer }) {
       client = await authenticate(ctx);
       if (scope && !client.scopes.includes(scope)) throw new HttpError(403, 'insufficient_scope', E.scope);
       if (rate === 'credentials') limit(`int-cred:${client.id}`, 120, 10 * 60_000);
+      else if (rate === 'points') limit(`int-points:${client.id}`, 300, 10 * 60_000);
       else limit(`int-read:${client.id}`, 600, 60_000);
       ctx.client = client;
       await handler(ctx);
@@ -211,4 +230,99 @@ export function registerIntegration({ R, db, config, limiter, pioneer }) {
     const e = eligibility(r, card);
     sendJson(ctx.res, 200, { rewardId: r.id, title: r.title, pointsCost: r.points_cost, balance: card.balance, eligible: e.eligible, affordable: e.affordable, shortfall: e.shortfall, reasons: e.reasons }, NO_STORE);
   });
+
+  // ---------- points: credit / debit through the Pioneer ledger --------------------------------
+  // One database transaction per operation: lock -> idempotency re-check -> limits/balance -> operation row ->
+  // ledger row (the existing trigger changes the balance and refuses negatives) -> stored result -> COMMIT.
+  // The operation row's UNIQUE (client_id, idempotency_key) makes a repeated or concurrent duplicate impossible;
+  // a duplicate gets the stored original result instead.
+  const limitErr = (limitName, max, extra = {}) => new HttpError(422, 'partner_limit_exceeded', E.limit, { limit: limitName, max, ...extra });
+  const pointsRequest = async (ctx, kind) => {
+    const idem = String(ctx.req.headers['idempotency-key'] ?? '');
+    if (!idem) throw new HttpError(400, 'idempotency_key_required', E.idemMissing);
+    if (!IDEM_RE.test(idem)) throw new HttpError(400, 'invalid_idempotency_key', E.idemMissing);
+    const body = await readJson(ctx.req, 2000);
+    const customerId = customerIdOf(body.customerId);
+    const points = body.points;
+    if (typeof points !== 'number' || !Number.isSafeInteger(points) || points < 1 || points > MAX_POINTS_OP) throw new HttpError(422, 'invalid_points_amount', E.points, { points: E.points });
+    const reference = typeof body.reference === 'string' ? body.reference : '';
+    const reason = typeof body.reason === 'string' ? body.reason : '';
+    const description = clean(body.description ?? '');
+    const errors = {
+      ...(!REF_RE.test(reference) && { reference: 'Required: 3-100 characters from A-Z a-z 0-9 . _ : -, unique per partner.' }),
+      ...(!REASON_RE.test(reason) && { reason: 'Required: 2-40 characters, lower-case letters, digits and _, starting with a letter (e.g. game_reward).' }),
+      ...((body.description != null && typeof body.description !== 'string') || [...description].length > 200 ? { description: 'Optional text, at most 200 characters.' } : {}),
+    };
+    if (Object.keys(errors).length) throw new HttpError(422, 'validation_failed', E.validation, errors);
+    // fingerprint of everything that defines the operation; a retry must match it exactly
+    const requestHash = createHash('sha256').update(JSON.stringify([kind, customerId, points, reference, reason, description])).digest('hex');
+    return { idem, customerId, points, reference, reason, description, requestHash };
+  };
+  const replayOf = async (c, client, req) => {
+    const prev = (await c.query('SELECT request_hash, result FROM partner_point_operations WHERE client_id = $1 AND idempotency_key = $2', [client.id, req.idem])).rows[0];
+    if (!prev) return null;
+    if (prev.request_hash !== req.requestHash) throw new HttpError(409, 'idempotency_conflict', E.idemConflict);
+    return prev.result;
+  };
+
+  const pointsOperation = (kind) => async (ctx) => {
+    const client = ctx.client, req = await pointsRequest(ctx, kind);
+    const send = (result, replayed) => sendJson(ctx.res, replayed ? 200 : 201, result, { ...NO_STORE, ...(replayed ? { 'Idempotent-Replayed': 'true' } : {}) });
+    const early = await replayOf(db, client, req);
+    if (early) return send(early, true);
+    const maxOp = kind === 'credit' ? client.max_credit_per_operation : client.max_debit_per_operation;
+    if (req.points > maxOp) throw limitErr(kind === 'credit' ? 'max_credit_per_operation' : 'max_debit_per_operation', maxOp);
+
+    const run = () => withTransaction(db, async (c) => {
+      // Lock order (never reversed, so no deadlocks): partner (credits only, for its daily total) -> link -> card.
+      if (kind === 'credit') await c.query('SELECT id FROM integration_clients WHERE id = $1 FOR UPDATE', [client.id]);
+      const link = (await c.query("SELECT id, card_id FROM pioneer_card_links WHERE client_id = $1 AND external_customer_id = $2 AND status = 'active' FOR SHARE", [client.id, req.customerId])).rows[0];
+      if (!link) throw new HttpError(404, 'link_not_found', E.noLink);
+      const card = (await c.query('SELECT id, balance, status FROM pioneer_cards WHERE id = $1 FOR UPDATE', [link.card_id])).rows[0];
+      // a concurrent duplicate that was waiting on the locks above now sees the committed original
+      const replay = await replayOf(c, client, req);
+      if (replay) return { result: replay, replayed: true };
+      if (card.status !== 'active') throw new HttpError(403, 'card_inactive', E.inactive);
+      if ((await c.query('SELECT 1 FROM partner_point_operations WHERE client_id = $1 AND reference = $2', [client.id, req.reference])).rows[0])
+        throw new HttpError(409, 'duplicate_reference', E.duplicateRef);
+      if (kind === 'credit') {
+        const sum = async (extra, args) => (await c.query(`SELECT COALESCE(SUM(points), 0)::int AS s FROM partner_point_operations WHERE client_id = $1 AND kind = 'credit' AND created_at > now() - interval '24 hours'${extra}`, [client.id, ...args])).rows[0].s;
+        const cardDay = await sum(' AND card_id = $2', [card.id]);
+        if (cardDay + req.points > client.max_credit_per_card_per_day) throw limitErr('max_credit_per_card_per_day', client.max_credit_per_card_per_day, { usedLast24h: cardDay });
+        const allDay = await sum('', []);
+        if (allDay + req.points > client.max_credit_per_day) throw limitErr('max_credit_per_day', client.max_credit_per_day, { usedLast24h: allDay });
+      } else if (card.balance < req.points) {
+        throw new HttpError(409, 'insufficient_points', E.insufficient, { balance: card.balance, points: req.points });
+      }
+      const op = (await c.query(
+        `INSERT INTO partner_point_operations (client_id, card_id, link_id, kind, points, reference, reason, description, idempotency_key, request_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+        [client.id, card.id, link.id, kind, req.points, req.reference, req.reason, req.description, req.idem, req.requestHash])).rows[0];
+      // Shown in the cardholder's history: the partner and what happened, nothing internal.
+      const what = req.description || req.reason.charAt(0).toUpperCase() + req.reason.slice(1).replace(/_/g, ' ');
+      const tx = (await c.query(
+        'INSERT INTO pioneer_transactions (card_id, type, amount, description, partner_operation_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, type, amount, balance_after, created_at',
+        [card.id, kind === 'credit' ? 'partner_credit' : 'partner_redemption', kind === 'credit' ? req.points : -req.points, `${partnerLabel(client)} — ${what}`.slice(0, 500), op.id])).rows[0];
+      const result = {
+        success: true,
+        transaction: {
+          id: String(tx.id), type: tx.type, points: req.points, amount: tx.amount, balanceAfter: tx.balance_after,
+          customerId: req.customerId, reference: req.reference, reason: req.reason, description: req.description, createdAt: tx.created_at,
+        },
+      };
+      await c.query('UPDATE partner_point_operations SET result = $1 WHERE id = $2', [JSON.stringify(result), op.id]);
+      return { result, replayed: false };
+    });
+
+    let out;
+    try { out = await run(); } catch (e) {
+      if (isUnique(e, 'idem_key')) { const r = await replayOf(db, client, req); if (r) return send(r, true); } // concurrent duplicate won
+      if (isUnique(e, 'reference_key')) throw new HttpError(409, 'duplicate_reference', E.duplicateRef);
+      if (e?.code === '23514' && String(e.constraint || '').includes('balance')) throw new HttpError(409, 'insufficient_points', E.insufficient); // ledger guard (backstop)
+      throw e;
+    }
+    send(out.result, out.replayed);
+  };
+  route('POST', '/points/credit', { scope: 'points:credit', rate: 'points' }, pointsOperation('credit'));
+  route('POST', '/points/debit', { scope: 'points:debit', rate: 'points' }, pointsOperation('debit'));
 }

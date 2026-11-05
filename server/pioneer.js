@@ -197,8 +197,8 @@ export function registerPioneer({ R, db, config, limiter, guard, params, addSear
       card: { number: card.card_no, firstName: card.first_name, lastName: card.last_name, displayName: displayName(card.first_name, card.last_name), hasName: !!(card.first_name || card.last_name), memberSince: card.created_at },
       balance: card.balance,
       stats: {
-        earned: v('initial_bonus') + v('admin_credit'), received: v('transfer_in'), transferred: v('transfer_out'),
-        spent: v('redemption') - v('redemption_refund'), deducted: v('admin_debit'),
+        earned: v('initial_bonus') + v('admin_credit') + v('partner_credit'), received: v('transfer_in'), transferred: v('transfer_out'),
+        spent: v('redemption') - v('redemption_refund') + v('partner_redemption'), deducted: v('admin_debit'),
       },
     };
   };
@@ -623,7 +623,7 @@ export function registerPioneer({ R, db, config, limiter, guard, params, addSear
   });
 
   // ---------- admin: ledger, redemptions, audit, settings -------------------------------
-  const TX_TYPES = ['initial_bonus', 'transfer_out', 'transfer_in', 'redemption', 'redemption_refund', 'admin_credit', 'admin_debit'];
+  const TX_TYPES = ['initial_bonus', 'transfer_out', 'transfer_in', 'redemption', 'redemption_refund', 'admin_credit', 'admin_debit', 'partner_credit', 'partner_redemption'];
   R('GET', `${A}/transactions`, { auth: true }, async (ctx) => {
     const q = ctx.url.searchParams, p = params();
     const type = TX_TYPES.includes(q.get('type')) ? q.get('type') : null;

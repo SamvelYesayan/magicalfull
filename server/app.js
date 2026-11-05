@@ -196,7 +196,8 @@ export async function createApp(config) {
       label = m.route.pattern;
       ctx.params = m.params;
       const unsafe = !['GET', 'HEAD'].includes(req.method);
-      if (unsafe && !originOk(req)) throw new HttpError(403, 'bad_origin', M.origin);
+      // integration routes refuse ANY Origin header themselves (server/integration.js), with their own error code
+      if (unsafe && !path.startsWith('/api/integration/') && !originOk(req)) throw new HttpError(403, 'bad_origin', M.origin);
       if (m.route.opts.auth) {
         const s = await sessionFrom(req);
         if (!s) throw new HttpError(401, 'unauthenticated', M.auth);

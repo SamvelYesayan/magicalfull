@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Magical Pioneer Card — Integration API v1",
+    "name": "Magical Pioneer Card — Integration API v1 (with points)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "See docs/PIONEER_CARD_API.md. Set baseUrl and apiKey (as a secret current value; never export it)."
   },
@@ -236,6 +236,78 @@
           ]
         },
         "description": "Scope cards:link."
+      }
+    },
+    {
+      "name": "Credit points",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "christmas-store:credit:{{$guid}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/points/credit",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "points",
+            "credit"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"points\": 100,\n  \"reference\": \"christmas-game-{{$timestamp}}\",\n  \"reason\": \"game_reward\",\n  \"description\": \"Christmas game reward\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Scope points:credit (granted by Magical). Idempotency-Key required; same key + same body replays the original result."
+      }
+    },
+    {
+      "name": "Debit points",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "christmas-store:debit:{{$guid}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/points/debit",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "points",
+            "debit"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"points\": 250,\n  \"reference\": \"christmas-gift-{{$timestamp}}\",\n  \"reason\": \"partner_redemption\",\n  \"description\": \"Christmas Store gift redemption\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Scope points:debit (granted by Magical). 409 insufficient_points if the balance is too low; nothing is deducted."
       }
     }
   ]

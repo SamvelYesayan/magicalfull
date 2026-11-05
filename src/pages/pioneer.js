@@ -201,7 +201,7 @@ function txList(items) {
   return h('ul.tx', {}, items.map((t) => {
     const pos = t.amount > 0;
     const detail = [t.counterparty ? `${t.type === 'transfer_out' ? 'Ստացող՝' : 'Ուղարկող՝'} ${t.counterparty.name} (${t.counterparty.number})` : t.description, when(t.createdAt), t.reference].filter(Boolean).join(' · ');
-    return h('li', {}, h('span.ti' + (t.type.startsWith('transfer') ? (pos ? '.in' : '.out') : ''), {}, svg(t.type === 'redemption' ? 'gift' : t.type.startsWith('transfer') ? 'arrow' : 'star')),
+    return h('li', {}, h('span.ti' + (t.type.startsWith('transfer') ? (pos ? '.in' : '.out') : ''), {}, svg(t.type === 'redemption' || t.type === 'partner_redemption' ? 'gift' : t.type.startsWith('transfer') ? 'arrow' : 'star')),
       h('div.d', {}, h('b', {}, TX_LABELS[t.type] || t.type), h('span', {}, detail)),
       h('div.a' + (pos ? '.pos' : ''), {}, (pos ? '+' : '') + num(t.amount), h('small', {}, `մնացորդ՝ ${num(t.balanceAfter)}`)));
   }));

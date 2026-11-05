@@ -29,7 +29,7 @@ export async function start(extra = {}) {
   const url = await verifyTestDatabase();
   const config = { ...loadConfig({ NODE_ENV: 'test', APP_SECRET: 's'.repeat(40), DATABASE_URL: url, STATIC_DIR: '/nonexistent' }), rateLimits: false, ...extra };
   const app = await createApp(config); // applies migrations to the (verified) test database
-  await app.db.query('TRUNCATE registrations, contact_messages, admin_sessions, admins, pioneer_cards, pioneer_login_guard, pioneer_rewards, pioneer_settings, integration_request_log, pioneer_card_links, integration_clients RESTART IDENTITY CASCADE');
+  await app.db.query('TRUNCATE registrations, contact_messages, admin_sessions, admins, pioneer_cards, pioneer_login_guard, pioneer_rewards, pioneer_settings, integration_request_log, partner_point_operations, pioneer_card_links, integration_clients RESTART IDENTITY CASCADE');
   await app.db.query('INSERT INTO pioneer_settings (id) VALUES (TRUE)'); // default initial bonus (200)
   app.server.listen(0, '127.0.0.1');
   await new Promise((ok) => (app.server.listening ? ok() : app.server.once('listening', ok)));
