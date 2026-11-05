@@ -53,7 +53,10 @@ export function loadConfig(env = process.env) {
     autoMigrate: env.DB_AUTO_MIGRATE !== 'false',
     staticDir: resolve(ROOT, env.STATIC_DIR || 'dist'),
     appSecret: env.APP_SECRET || '',
-    cookieSecure: env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : prod,
+    cookieSecure: env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : prod, // only the Secure flag on admin/Pioneer cookies
+    // Strict-Transport-Security is sent ONLY with HSTS_ENABLED=true (exactly), never by default and never because of
+    // COOKIE_SECURE: once browsers see it (1 year, includeSubDomains) it cannot be withdrawn.
+    hstsEnabled: env.HSTS_ENABLED === 'true',
     trustProxy: env.TRUST_PROXY === 'true',
     allowedOrigins: list(env.ALLOWED_ORIGINS),
     sessionHours: int(env.SESSION_TTL_HOURS, 8),

@@ -171,7 +171,7 @@ export async function createApp(config) {
       ctx.url = new URL(req.url, 'http://localhost');
       const path = ctx.url.pathname;
       const isApi = path.startsWith('/api/');
-      setSecurityHeaders(res, { secure: config.cookieSecure });
+      setSecurityHeaders(res, { hsts: config.hstsEnabled });
       // CORS: only for explicitly allowed origins, never for the server-to-server integration API
       const origin = req.headers.origin;
       if (origin && !path.startsWith('/api/integration/') && config.allowedOrigins.includes(origin.replace(/\/$/, ''))) {

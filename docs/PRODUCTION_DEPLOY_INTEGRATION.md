@@ -25,7 +25,7 @@ Placeholders used below (fill in from the Phase 0 output):
 | GitHub `master` | `15eb4b9` = merge of PR #1; contains `de6de67` and migration `005_integration_api.sql`. |
 | Live site | Runs code **after** the seminar removal (`/invitation` → 302, `/api/registrations` → 404) but **without** the integration API (`/api/integration/v1/*` → 404 from the Node app). |
 | Reverse proxy | nginx 1.28; `http://` → `301 https://`. Only ports 80/443 are reachable; Node (3000) and PostgreSQL (5432) are not exposed. |
-| HSTS | **Not sent.** The app only sends HSTS when secure cookies are on → production almost certainly runs with `COOKIE_SECURE=false` (or not in production mode). |
+| HSTS | **Not sent.** Before the `HSTS_ENABLED` change the app sent HSTS whenever secure cookies were on → production almost certainly ran with `COOKIE_SECURE=false` (or not in production mode). |
 | DNS | Wildcard `*.magical.am` → `5.63.165.46` (not serving HTTPS). `api.magical.am` → production IP, but HTTPS on it fails. |
 
 ## Phase 0 — read-only inspection (safe, changes nothing)
@@ -54,13 +54,13 @@ Decision points from that output:
 
 ## Phase 1 — configuration decisions (need your choice; nothing changed yet)
 
-### `COOKIE_SECURE` and HSTS
+### `COOKIE_SECURE` and `HSTS_ENABLED` (independent)
 
 How the code works (`server/config.js`, `server/app.js`, `server/pioneer.js`, `server/security.js`):
-`COOKIE_SECURE=true` (or unset with production mode) does **two** things at once:
-1. the admin cookie `mg_admin` and the cardholder cookie `mg_pioneer` get the `Secure` flag (already `HttpOnly`,
-   `SameSite=Strict`);
-2. every response carries `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
+- `COOKIE_SECURE=true` (or unset with production mode) only gives the admin cookie `mg_admin` and the cardholder
+  cookie `mg_pioneer` the `Secure` flag (they are already `HttpOnly`, `SameSite=Strict`).
+- `HSTS_ENABLED=true` (exactly; default off, also in production) makes every response carry
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains`. Nothing else turns HSTS on.
 
 Why `Secure` is correct here: TLS ends at nginx, but the *browser* only ever talks HTTPS to magical.am (HTTP is
 301-redirected), so Secure cookies keep working; Node does not need to see TLS. Today, without `Secure`, a browser
@@ -72,11 +72,9 @@ year, and this cannot be rolled back for those browsers. Affected today: `api.ma
 HTTPS broken) and anything under the wildcard. If no subdomain is (or will be) used without valid HTTPS — including a
 possible `shop.magical.am` for the Christmas Store — this is fine.
 
-Options (choose one):
-- **A (recommended if no subdomain needs HTTP):** set `COOKIE_SECURE=true`. Secure cookies + 1-year HSTS incl. subdomains.
-- **B (cautious):** first a small code change making the HSTS `max-age`/`includeSubDomains` configurable, start with
-  a short max-age without subdomains, raise later. Separate commit and review; not part of this deploy.
-- Either way, existing logins stay valid (cookies are re-sent with the new flag on the next login; sessions in the
+Recommendation: set `COOKIE_SECURE=true` now and leave `HSTS_ENABLED` unset (off). Turn HSTS on later, as its
+own decision, once every magical.am subdomain in use serves valid HTTPS (today `api.magical.am` does not).
+Existing logins stay valid (cookies are re-sent with the new flag on the next login; sessions in the
   database are unaffected).
 
 ### `TRUST_PROXY`
@@ -229,7 +227,7 @@ curl -s https://magical.am/api/health                                   # {"ok":
 curl -s -o /dev/null -w '%{http_code}\n' https://magical.am/             # 200
 curl -s https://magical.am/api/integration/v1/me                         # 401 invalid_api_key  (was 404)
 curl -s -H 'Origin: https://example.com' https://magical.am/api/integration/v1/me   # 403 browser_requests_not_allowed
-curl -sI https://magical.am/ | grep -i strict-transport                  # present if COOKIE_SECURE=true
+curl -sI https://magical.am/ | grep -i strict-transport                  # absent unless HSTS_ENABLED=true
 ```
 Then: admin login at `/admin` and a Pioneer Card login still work (log in again once; new cookies carry `Secure`),
 and the server log shows `Magical server listening ... (production), database "<production db>"`.

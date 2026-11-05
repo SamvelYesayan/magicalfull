@@ -109,7 +109,7 @@ npm start                        # production mode; same command on Windows and 
 - CSRF: per-session token (`X-CSRF-Token`) on every state-changing admin call + Origin check on all non-GET requests.
 - Rate limits: login (5/15 min per username, 20 per IP), contact (6/h), Pioneer Card endpoints (see below).
 - Contact spam: honeypot field, minimum fill time, link-count limit, rate limit. No CAPTCHA.
-- CSP, `X-Frame-Options: DENY`, `nosniff`, HSTS (when secure), `no-store` on admin/PDF responses; parameterised SQL only; admin UI renders data with `textContent`; CSV cells starting with `= + - @` are neutralised; errors never include stack traces.
+- CSP, `X-Frame-Options: DENY`, `nosniff`, HSTS (only with `HSTS_ENABLED=true`; `COOKIE_SECURE` controls just the cookie `Secure` flag), `no-store` on admin/PDF responses; parameterised SQL only; admin UI renders data with `textContent`; CSV cells starting with `= + - @` are neutralised; errors never include stack traces.
 
 ## API
 
