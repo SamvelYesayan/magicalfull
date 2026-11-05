@@ -64,6 +64,13 @@ export async function migrate(pool, dir = MIGRATIONS) {
   } finally { client.release(); }
 }
 
+/** Names of *.sql files not yet recorded in schema_migrations (all of them on an empty database). Read-only. */
+export async function pendingMigrations(pool, dir = MIGRATIONS) {
+  const has = (await pool.query("SELECT to_regclass('schema_migrations') IS NOT NULL AS t")).rows[0].t;
+  const done = has ? new Set((await pool.query('SELECT version FROM schema_migrations')).rows.map((r) => r.version)) : new Set();
+  return readdirSync(dir).filter((x) => x.endsWith('.sql')).sort().filter((f) => !done.has(f));
+}
+
 /** True for a PostgreSQL unique violation (23505), optionally on a constraint whose name contains `part`. */
 export const isUnique = (e, part) => e?.code === '23505' && (!part || String(e.constraint || '').includes(part));
 export const escapeLike = (s) => s.replace(/[\\%_]/g, (c) => '\\' + c);

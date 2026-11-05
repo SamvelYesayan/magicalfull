@@ -295,6 +295,33 @@ test('migration 006 on an existing database keeps every card, balance and ledger
   await s.close();
 });
 
+test('CLIs never apply migrations: with a migration pending they refuse and change nothing', async () => {
+  const s = await start();
+  const url = await verifyTestDatabase();
+  const run = (script, args = [], env = {}) => {
+    const r = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', env: { ...process.env, DATABASE_URL: url, ...env } });
+    return { code: r.status, text: r.stdout + r.stderr };
+  };
+  // make 006 look pending (its schema stays in place; only the bookkeeping row is removed for this test)
+  await s.q("DELETE FROM schema_migrations WHERE version = '006_partner_points.sql'");
+  try {
+    for (const args of [['list-keys'], ['grant-scope', '--name', 'christmas-store', '--scope', 'points:credit'], ['create-key', '--name', 'x-shop']]) {
+      const r = run('server/integration-cli.js', args);
+      assert.equal(r.code, 1, args.join(' '));
+      assert.match(r.text, /Refusing to run: database migrations are pending \(006_partner_points\.sql\)/);
+    }
+    const seed = run('server/seed-admin.js', [], { ADMIN_USERNAME: 'someone', ADMIN_PASSWORD: 'long-enough-password' });
+    assert.equal(seed.code, 1); assert.match(seed.text, /migrations are pending/);
+    assert.equal((await s.q("SELECT COUNT(*)::int AS n FROM schema_migrations WHERE version = '006_partner_points.sql'")).rows[0].n, 0, 'nothing was applied or recorded');
+    assert.equal((await s.q("SELECT COUNT(*)::int AS n FROM integration_clients WHERE name = 'x-shop'")).rows[0].n, 0);
+    assert.equal((await s.q("SELECT COUNT(*)::int AS n FROM admins WHERE username = 'someone'")).rows[0].n, 0);
+  } finally {
+    await s.q("INSERT INTO schema_migrations (version) VALUES ('006_partner_points.sql') ON CONFLICT DO NOTHING");
+  }
+  assert.equal(run('server/integration-cli.js', ['list-keys']).code, 0, 'works again once nothing is pending');
+  await s.close();
+});
+
 test('CLI: scopes granted and revoked without touching the key; rotation keeps the partner, links and limits', async () => {
   const s = await start();
   const url = await verifyTestDatabase();

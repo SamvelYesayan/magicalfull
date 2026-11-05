@@ -6,10 +6,10 @@
 #   usage:  bash scripts/verify-backup.sh /var/backups/magical/<stamp>/magical.dump   (from the app directory)
 set -euo pipefail
 DUMP=${1:?usage: verify-backup.sh <dump file>}
-DBURL=$(node --input-type=module -e "const { loadEnvFile } = await import('./server/config.js'); loadEnvFile(); process.stdout.write(process.env.DATABASE_URL || '')")
-[ -n "$DBURL" ] || { echo "DATABASE_URL not found in .env"; exit 1; }
+# connection settings via libpq variables (scripts/pgenv.sh): the password never appears on a command line
+. "$(cd "$(dirname "$0")" && pwd)/pgenv.sh"
 CR=$(printf '\r')
-q() { PGOPTIONS='-c default_transaction_read_only=on' psql "$DBURL" -X -A -t -c "$1" | tr -d "$CR"; } # read-only session; CR stripped (Windows psql)
+q() { PGOPTIONS='-c default_transaction_read_only=on' psql -X -A -t -c "$1" | tr -d "$CR"; } # read-only session; CR stripped (Windows psql)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
