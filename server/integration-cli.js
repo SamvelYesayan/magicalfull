@@ -15,9 +15,10 @@
 // A new key is shown ONCE. With --out it is appended to that file (MAGICAL_PIONEER_API_KEY=...) instead of
 // being printed, so it never appears in the terminal or shell history. Only its SHA-256 is stored.
 // Scope and limit commands never touch or print the key.
+// No command applies database migrations: while any are pending, every command refuses to run.
 import { appendFileSync } from 'node:fs';
 import { loadEnvFile, loadConfig } from './config.js';
-import { createPool, migrate, withTransaction, isUnique } from './db.js';
+import { createPool, pendingMigrations, withTransaction, isUnique } from './db.js';
 import { generateKey, SCOPES, ALL_SCOPES, LIMIT_COLUMNS, partnerLabel } from './integration.js';
 import { normalizeCardNo } from '../shared/pioneer.js';
 
@@ -37,7 +38,9 @@ let pool, code = 0;
 try {
   const cfg = loadConfig({ ...process.env, APP_SECRET: process.env.APP_SECRET || 'x'.repeat(32) });
   pool = createPool(cfg);
-  await migrate(pool); // additive only (005/006 create the integration tables and columns if missing)
+  // Never applies migrations itself: a schema change must only happen through the explicit, backed-up `npm run migrate`.
+  const pending = await pendingMigrations(pool);
+  if (pending.length) fail(`Refusing to run: database migrations are pending (${pending.join(', ')}). Back up the database and run \`npm run migrate\` first (docs/PRODUCTION_DEPLOY_INTEGRATION.md, Phase 4).`);
 
   const name = opt('name');
   const needName = () => { if (!name || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(name)) fail('--name is required: 2-49 lower-case letters, digits or "-", e.g. christmas-store'); return name; };

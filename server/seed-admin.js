@@ -2,7 +2,7 @@
 //   ADMIN_USERNAME=... ADMIN_PASSWORD='...' npm run seed:admin
 //   add --reset to overwrite the password of an existing admin
 import { loadEnvFile, loadConfig } from './config.js';
-import { createPool, migrate } from './db.js';
+import { createPool, pendingMigrations } from './db.js';
 import { ensureAdmin } from './app.js';
 
 loadEnvFile();
@@ -16,7 +16,9 @@ let pool, code = 0;
 try {
   const cfg = loadConfig({ ...process.env, APP_SECRET: process.env.APP_SECRET || 'x'.repeat(32) });
   pool = createPool(cfg);
-  await migrate(pool);
+  // Never applies migrations itself (run `npm run migrate` first, as in the README setup).
+  const pending = await pendingMigrations(pool);
+  if (pending.length) throw new Error(`database migrations are pending (${pending.join(', ')}). Run \`npm run migrate\` first.`);
   const result = await ensureAdmin(pool, username, password, { reset: process.argv.includes('--reset') });
   console.log({ created: `Administrator "${username}" created.`, reset: `Password for "${username}" reset; existing sessions revoked.`, exists: `Administrator "${username}" already exists (use --reset to change the password).` }[result]);
 } catch (e) {

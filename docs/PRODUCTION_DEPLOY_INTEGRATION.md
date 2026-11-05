@@ -5,7 +5,13 @@ Runbook for bringing the integration API (migration `005`, `master` `15eb4b9`) a
 Nothing here has been executed. Phase 0 is read-only; every later phase needs explicit approval.
 If `005` is already applied on production, the same phases apply; `npm run migrate` then applies only `006`.
 
-`TARGET` below = the reviewed `master` commit that contains `006_partner_points.sql` (fill in after the merge).
+`TARGET` below = the reviewed `master` commit that contains `006_partner_points.sql` **and** the pre-deployment fixes
+(CLIs no longer migrate, password-free scripts, baseline SQL). `295f367` alone is **not** enough: it lacks those fixes.
+
+**Migration safety rule.** From the moment the server checkout contains `006`, only these apply it: an app
+(re)start (unless `DB_AUTO_MIGRATE=false`, exactly lower-case) and `npm run migrate`. `npm run integration` and
+`npm run seed:admin` never migrate: they refuse to run while a migration is pending. Do not restart the app between
+Phase 3 and Phase 4 (and make sure no process manager restarts it on its own, e.g. pm2 `watch`).
 
 Placeholders used below (fill in from the Phase 0 output):
 `APP_DIR` (app checkout on the server), `APP` (pm2 name or systemd unit), `BK` (backup folder).
@@ -108,10 +114,10 @@ Writes only into a new backup folder; the database session used by pg_dump is a 
 cd "$APP_DIR"
 BK=/var/backups/magical/$(date +%Y%m%d-%H%M%S)
 sudo install -d -m 700 -o "$(id -un)" "$BK"
-DBURL=$(node --input-type=module -e "const { loadEnvFile } = await import('./server/config.js'); loadEnvFile(); process.stdout.write(process.env.DATABASE_URL || '')")
+. scripts/pgenv.sh                      # PGHOST/PGUSER/PGPASSWORD/... from .env; nothing secret printed, nothing on a command line
 
 # 1) database (custom format, includes schema + all data)
-PGOPTIONS='-c default_transaction_read_only=on' pg_dump -Fc -f "$BK/magical.dump" "$DBURL"
+PGOPTIONS='-c default_transaction_read_only=on' pg_dump -Fc -f "$BK/magical.dump"
 # 2) verify: archive readable + exact row count per table equals the live database
 bash scripts/verify-backup.sh "$BK/magical.dump"
 # 3) code and configuration as they are now (the .env copy contains secrets: keep it in the 700 folder)
@@ -122,7 +128,9 @@ cp -p .env "$BK/env.backup" && chmod 600 "$BK/env.backup"
 ( cd "$BK" && sha256sum magical.dump app.tgz env.backup > SHA256SUMS )
 ```
 
-`pg_dump` must be the same major version as the server or newer (Phase 0 prints both).
+`pg_dump` must be the same major version as the server or newer (Phase 0 prints both). If the checkout does not
+have `scripts/pgenv.sh` and `scripts/verify-backup.sh` yet (they arrive with `TARGET`), copy both into `scripts/`
+first; do **not** `git pull` for them (that would bring `006` before the backup).
 Optional full restore test (needs a role that may create databases): `createdb magical_restore_check`,
 `pg_restore -d magical_restore_check "$BK/magical.dump"`, compare counts, then drop **only** that scratch database.
 
@@ -133,7 +141,7 @@ cd "$APP_DIR"
 git status --short                      # must be empty; stop if not
 git fetch origin
 git merge --ff-only "$TARGET"           # moves to the reviewed master commit; refuses if history diverged
-git log -1 --oneline                    # expect: TARGET
+git log -1 --oneline                    # expect: TARGET (not 295f367)
 ls server/migrations-postgres/          # expect 001 ... 006
 npm ci --include=dev                    # dev deps needed for the build (vite) even when NODE_ENV=production
 npm run build                           # rebuilds dist/ (only static files change)
@@ -151,11 +159,28 @@ belong on production).
    ```
 2. nginx: add/adjust the three `proxy_set_header` lines, then `sudo nginx -t && sudo systemctl reload nginx`
    (reload keeps connections; `-t` aborts on a syntax error).
-3. Migrations (old code keeps running; it ignores the new tables, columns and ledger types):
+3. Baseline, migration, after-check (old code keeps running; it ignores the new tables, columns and ledger types).
+   Do it first on the restored copy (`magical_web_v2_restore_check`, see "Rehearsal" below), then on production.
    ```bash
-   npm run migrate                      # expect: Applied: 005_integration_api.sql, 006_partner_points.sql (or only 006)
-   bash scripts/prod-inspect.sh "$PWD" | sed -n '/== database/,/== disk/p'   # integration tables: t t t
+   . scripts/pgenv.sh
+   export RO='-c default_transaction_read_only=on -c statement_timeout=60s'
+   PGOPTIONS="$RO" psql -X -f scripts/sql/baseline-006.sql | tee "$BK/baseline-before-006.txt"
+   #   check: cards_mismatched = 0, last_row_mismatched = 0, total_balances = total_ledger, no old open transactions;
+   #   note ledger_max_id (N)
+   PGOPTIONS='-c lock_timeout=5s -c statement_timeout=60s' npm run migrate   # expect: Applied: 006_partner_points.sql
+   #   on "canceling statement due to lock timeout": nothing was applied or recorded (verified); wait and run it again
+   PGOPTIONS="$RO" psql -X -v ledger_max_id=N -f scripts/sql/after-006.sql | tee "$BK/baseline-after-006.txt"
+   #   check: the "rows up to the baseline id" line equals the baseline ledger fingerprint EXACTLY; invariants 0 / 0 /
+   #   equal totals; points_scoped_keys = 0; pioneer_tx_partner_only listed
    ```
+   The lock timeout works because the migration runner's database driver (pg 8) takes `PGOPTIONS` from the
+   environment; verified: the runner's session reports the timeout, a blocked `ALTER TABLE` stops after it with
+   `55P03`, and the failed migration is rolled back and left unrecorded.
+
+   **Rehearsal on the restored copy** (touches only that copy): run the same three commands with
+   `export PGDATABASE=magical_web_v2_restore_check` after `. scripts/pgenv.sh`, and for the migration step
+   `DATABASE_URL=` set to the restore database (`npm run migrate` reads `DATABASE_URL`, not `PGDATABASE`).
+   Compare timing and results before touching production.
 
 What `005_integration_api.sql` does (reviewed line by line): three `CREATE TABLE` (`integration_clients`,
 `pioneer_card_links`, `integration_request_log`) and seven `CREATE INDEX`, nothing else — no `ALTER`, `UPDATE`,
@@ -175,18 +200,18 @@ What `006_partner_points.sql` does (reviewed line by line; one transaction, all 
   operation. The ledger triggers (balance update, append-only, no direct balance changes) are not touched.
 - `integration_clients`: the scopes CHECK is widened to allow `points:credit`/`points:debit` (**no key gets them**),
   plus `display_name` and four limit columns with constant defaults (metadata-only change).
-- No `UPDATE`, `DELETE`, `INSERT`, `TRUNCATE` or `DROP TABLE`/`DROP COLUMN`. Locks: `ALTER TABLE` on
-  `pioneer_transactions` takes an exclusive lock for the duration of the check scan (milliseconds to seconds for
-  this table size); card logins, transfers and redemptions wait meanwhile, nothing fails.
+- No `UPDATE`, `DELETE`, `INSERT`, `TRUNCATE` or `DROP TABLE`/`DROP COLUMN`. Locks: the `ALTER TABLE`s take an
+  ACCESS EXCLUSIVE lock on `pioneer_transactions` and `integration_clients` until the migration commits: **reads
+  wait too** (balances, history, admin ledger, integration API). With ~134 ledger rows that is milliseconds. The real
+  risk is waiting for the lock: behind a long-running transaction the migration would queue and every request
+  after it would queue behind it, hence `lock_timeout` above. The foreign keys also briefly block writes to
+  `pioneer_cards` and `pioneer_card_links` (e.g. the login timestamp).
 - Proven by `tests/integration-points.test.js` ("migration 006 on an existing database keeps every card, balance
   and ledger row unchanged"): cards, balances, every ledger row and partner keys are identical before/after.
 
-Extra pre-check for `006` (read-only, right after the Phase 2 backup), to compare after the migration:
-```bash
-PGOPTIONS='-c default_transaction_read_only=on' psql "$DBURL" -X -A -t -c "SELECT COUNT(*), SUM(amount), md5(string_agg(id || ':' || card_id || ':' || type || ':' || amount || ':' || balance_after, ',' ORDER BY id)) FROM pioneer_transactions" | tee "$BK/ledger-before.txt"
-PGOPTIONS='-c default_transaction_read_only=on' psql "$DBURL" -X -A -t -c "SELECT COUNT(*), SUM(balance), md5(string_agg(id || ':' || balance, ',' ORDER BY id)) FROM pioneer_cards" | tee "$BK/cards-before.txt"
-# after `npm run migrate`: run the same two queries; the output must be identical
-```
+The before/after fingerprints are in `scripts/sql/baseline-006.sql` and `scripts/sql/after-006.sql` (read-only,
+one consistent snapshot each). They include the original Phase 4 queries unchanged; the after-check compares the
+ledger only up to the baseline's highest id, so customers using the site in between cannot cause a false alarm.
 
 ## Phase 5 — restart (needs approval)
 

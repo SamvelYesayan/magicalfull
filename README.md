@@ -94,7 +94,8 @@ Pages: `/`, `/admin`, `/pioneer-card` (see "Magical Pioneer Card" below).
 ```
 npm ci && npm run build          # builds dist/ (3 pages)
 # .env: NODE_ENV=production, APP_SECRET (32+ chars), DATABASE_URL, TRUST_PROXY=true behind nginx/Caddy
-npm run migrate                  # optional: the server also migrates at start (set DB_AUTO_MIGRATE=false to disable)
+npm run migrate                  # back up first; the server also migrates at start (set DB_AUTO_MIGRATE=false to disable).
+                                 # `npm run seed:admin` and `npm run integration` never migrate: they refuse while migrations are pending
 # create the admin once (see above), then remove ADMIN_PASSWORD from the environment/.env
 npm start                        # production mode; same command on Windows and Linux
 ```

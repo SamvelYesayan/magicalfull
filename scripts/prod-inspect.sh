@@ -2,8 +2,11 @@
 # READ-ONLY production inspection for the integration deployment (docs/PRODUCTION_DEPLOY_INTEGRATION.md).
 # Changes nothing: no git checkout/pull, no restarts, no writes to files or the database.
 # Never prints secret values: secrets are reported only as "set (N chars)" / "EMPTY"; DATABASE_URL without password.
+# The database password is passed through the environment (scripts/pgenv.sh), never on a command line.
 #   usage:  bash scripts/prod-inspect.sh /path/to/app 2>&1 | tee /tmp/magical-inspect.txt
+#   (copy prod-inspect.sh AND pgenv.sh into the same folder if the app checkout does not have them yet)
 set -u
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)   # pgenv.sh is expected next to this script
 APP_DIR=${1:-$PWD}
 cd "$APP_DIR" || { echo "no such directory: $APP_DIR"; exit 1; }
 hr() { printf '\n== %s\n' "$1"; }
@@ -79,12 +82,12 @@ if command -v nginx >/dev/null; then
 else echo "nginx not on PATH"; fi
 
 hr "database (read-only session)"
-DBURL=$(node --input-type=module -e "const { loadEnvFile } = await import('./server/config.js'); loadEnvFile(); process.stdout.write(process.env.DATABASE_URL || '')" 2>/dev/null)
-if [ -z "$DBURL" ]; then echo "DATABASE_URL not available from .env (PG* variables?) - skipped"; else
-  PGOPTIONS='-c default_transaction_read_only=on' PGCONNECT_TIMEOUT=10 psql "$DBURL" -X -q -v ON_ERROR_STOP=1 -P pager=off <<'SQL'
+# connection settings via libpq variables (scripts/pgenv.sh): the password never appears on a command line
+if [ ! -f "$SCRIPT_DIR/pgenv.sh" ] || ! . "$SCRIPT_DIR/pgenv.sh"; then echo "pgenv.sh missing next to this script, or DATABASE_URL not in .env - skipped"; else
+  PGOPTIONS='-c default_transaction_read_only=on' PGCONNECT_TIMEOUT=10 psql -X -q -v ON_ERROR_STOP=1 -P pager=off <<'SQL'
 SELECT current_database() AS database, current_user AS "user", split_part(version(), ',', 1) AS server, pg_size_pretty(pg_database_size(current_database())) AS size;
 SELECT version, applied_at FROM schema_migrations ORDER BY version;
-SELECT to_regclass('integration_clients') IS NOT NULL AS integration_clients, to_regclass('pioneer_card_links') IS NOT NULL AS pioneer_card_links, to_regclass('integration_request_log') IS NOT NULL AS integration_request_log;
+SELECT to_regclass('integration_clients') IS NOT NULL AS integration_clients, to_regclass('pioneer_card_links') IS NOT NULL AS pioneer_card_links, to_regclass('integration_request_log') IS NOT NULL AS integration_request_log, to_regclass('partner_point_operations') IS NOT NULL AS partner_point_operations_006;
 SELECT relname AS table, n_live_tup AS approx_rows FROM pg_stat_user_tables ORDER BY relname;
 SELECT has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_in_db, (SELECT rolcreatedb FROM pg_roles WHERE rolname = current_user) AS can_create_databases;
 SQL
